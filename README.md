@@ -55,13 +55,13 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
   - [x] Patient reference validation
   - [x] LOINC code support
   - [x] Search by patient, code, category, date, status
-  - [ ] Unit tests (NEXT)
+  - [x] **Unit tests** - 16 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
 
 ---
 
 ## 🚧 In Progress
 
-- **Observation Unit Tests** - Testing laboratory results endpoints
+- **Phase 2 Planning** - Evaluate next features (DiagnosticReport vs CapabilityStatement)
 
 ---
 
@@ -162,14 +162,19 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
 ```
 
 **Test Coverage:**
-- **13 focused unit tests** covering Patient resource operations
-- **GetPatient** (2 tests): Valid ID, Not Found scenarios
-- **CreatePatient** (3 tests): Valid resource, Invalid content-type, FHIR validation
-- **SearchPatients** (8 tests): Individual parameters (name, identifier, birthdate, gender), combined filters, empty results, invalid inputs
+- **29 focused unit tests** covering Patient and Observation resources
+- **Patient** (13 tests):
+  - GetPatient (2): Valid ID, Not Found scenarios
+  - CreatePatient (3): Valid resource, Invalid content-type, FHIR validation
+  - SearchPatients (8): Individual parameters (name, identifier, birthdate, gender), combined filters, empty results, invalid inputs
+- **Observation** (16 tests):
+  - GetObservation (2): Valid ID, Not Found scenarios
+  - CreateObservation (5): Valid resource, Invalid content-type, Missing status/code, Non-existent patient reference
+  - SearchObservations (9): Individual parameters (patient, code, category, date, status), patient reference format handling, combined filters, empty results, invalid date
 - **Test isolation**: Each test uses unique in-memory database
 - **Framework**: xUnit + FluentAssertions + EF Core InMemory
 
-All tests passing ✅ (13/13)
+All tests passing ✅ (29/29)
 
 ### Database Commands
 
@@ -252,10 +257,9 @@ LabFlow/
 
 ## 🎯 Roadmap
 
-### Phase 1: Core Resources (Week 1) ← WE ARE HERE
-- [x] **Patient** (CRUD + search + tests) ✅
-- [x] **Observation** (CRUD + search + patient validation) ✅
-- [ ] Observation unit tests (IN PROGRESS)
+### Phase 1: Core Resources (Week 1) - COMPLETED ✅
+- [x] **Patient** (CRUD + search + 13 tests) ✅
+- [x] **Observation** (CRUD + search + patient validation + 16 tests) ✅
 
 ### Phase 2: Extended Features (Week 2)
 - [ ] DiagnosticReport
