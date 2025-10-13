@@ -1,5 +1,7 @@
 # LabFlow FHIR API
 
+[![.NET Build & Test](https://github.com/dasjn/labflow-fhir-app/actions/workflows/dotnet.yml/badge.svg)](https://github.com/dasjn/labflow-fhir-app/actions/workflows/dotnet.yml)
+
 **Laboratory Results Interoperability System**
 
 A production-ready FHIR R4 compliant API for seamless laboratory results exchange between healthcare systems.
@@ -57,11 +59,24 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
   - [x] Search by patient, code, category, date, status
   - [x] **Unit tests** - 16 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
 
+- [x] **CapabilityStatement** (COMPLETED ✅)
+  - [x] GET /metadata endpoint
+  - [x] Documents all supported resources (Patient, Observation)
+  - [x] Lists all interactions (read, create, search-type)
+  - [x] Details all search parameters with types and documentation
+  - [x] FHIR R4 compliance
+
+### CI/CD & Automation
+- [x] **GitHub Actions** - Automated build & test pipeline
+  - [x] Runs on every push to main
+  - [x] Executes all 29 unit tests
+  - [x] Build status badge in README
+
 ---
 
 ## 🚧 In Progress
 
-- **Phase 2 Planning** - Evaluate next features (DiagnosticReport vs CapabilityStatement)
+- **Phase 3 Planning** - Next features: DiagnosticReport, ServiceRequest, or JWT Authentication
 
 ---
 
@@ -88,6 +103,13 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 - (Optional) PostgreSQL if using production setup
 
 ### API Endpoints
+
+**FHIR Metadata:**
+```bash
+# Get server capability statement
+GET /metadata
+# Returns CapabilityStatement with all supported resources and operations
+```
 
 **Patient Resource:**
 ```bash
@@ -261,14 +283,16 @@ LabFlow/
 - [x] **Patient** (CRUD + search + 13 tests) ✅
 - [x] **Observation** (CRUD + search + patient validation + 16 tests) ✅
 
-### Phase 2: Extended Features (Week 2)
-- [ ] DiagnosticReport
-- [ ] ServiceRequest
-- [ ] **CapabilityStatement** (GET /metadata) - FHIR standard server documentation
+### Phase 2: FHIR Compliance & Automation (Week 2) - COMPLETED ✅
+- [x] **CapabilityStatement** (GET /metadata) - FHIR standard server documentation ✅
+- [x] **CI/CD Pipeline** (GitHub Actions) - Automated build & test ✅
+
+### Phase 3: Advanced Features (Future)
+- [ ] DiagnosticReport - Group multiple observations
+- [ ] ServiceRequest - Laboratory order workflow
 - [ ] JWT authentication
 - [ ] Advanced FHIR search (_include, _revinclude)
 - [ ] Integration tests
-- [ ] CI/CD pipeline
 - [ ] PostgreSQL migration
 - [ ] Azure deployment
 
