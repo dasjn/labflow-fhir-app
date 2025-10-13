@@ -46,13 +46,13 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
   - [x] Firely SDK integration (serialization/deserialization)
   - [x] **Tested successfully** - GET and POST working correctly
   - [x] **Search endpoints implemented** - name, identifier, birthdate, gender with Bundle responses
-  - [ ] Unit tests (NEXT)
+  - [x] **Unit tests** - 13 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
 
 ---
 
 ## 🚧 In Progress
 
-- **Patient Search endpoints** - Implementing FHIR search by name, identifier, birthdate, gender
+- **Observation Resource** - Next phase for laboratory results
 
 ---
 
@@ -122,8 +122,25 @@ dotnet build
 ### Run Tests
 
 ```bash
+# Run all tests
 dotnet test
+
+# Run with detailed output
+dotnet test --verbosity normal
+
+# Run specific test class
+dotnet test --filter "FullyQualifiedName~PatientControllerTests"
 ```
+
+**Test Coverage:**
+- **13 focused unit tests** covering Patient resource operations
+- **GetPatient** (2 tests): Valid ID, Not Found scenarios
+- **CreatePatient** (3 tests): Valid resource, Invalid content-type, FHIR validation
+- **SearchPatients** (8 tests): Individual parameters (name, identifier, birthdate, gender), combined filters, empty results, invalid inputs
+- **Test isolation**: Each test uses unique in-memory database
+- **Framework**: xUnit + FluentAssertions + EF Core InMemory
+
+All tests passing ✅ (13/13)
 
 ### Database Commands
 
@@ -190,9 +207,9 @@ LabFlow/
 ## 🎯 Roadmap
 
 ### Phase 1: Core Resources (Week 1) ← WE ARE HERE
-- [ ] Patient (CRUD + search)
+- [x] **Patient** (CRUD + search + tests) ✅
 - [ ] Observation (laboratory results)
-- [ ] Basic unit tests (>70% coverage)
+- [ ] Observation unit tests
 
 ### Phase 2: Extended Features (Week 2)
 - [ ] DiagnosticReport
