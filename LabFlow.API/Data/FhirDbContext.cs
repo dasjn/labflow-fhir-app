@@ -18,6 +18,11 @@ public class FhirDbContext : DbContext
     /// </summary>
     public DbSet<PatientEntity> Patients { get; set; } = null!;
 
+    /// <summary>
+    /// Observation resources table (laboratory results)
+    /// </summary>
+    public DbSet<ObservationEntity> Observations { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -80,6 +85,93 @@ public class FhirDbContext : DbContext
 
             entity.Property(e => e.Gender)
                 .HasMaxLength(20);
+
+            entity.Property(e => e.CreatedAt)
+                .IsRequired();
+
+            entity.Property(e => e.LastUpdated)
+                .IsRequired();
+
+            entity.Property(e => e.VersionId)
+                .IsRequired();
+
+            entity.Property(e => e.IsDeleted)
+                .IsRequired()
+                .HasDefaultValue(false);
+        });
+
+        // Configure Observation entity
+        modelBuilder.Entity<ObservationEntity>(entity =>
+        {
+            entity.ToTable("Observations");
+
+            // Primary key
+            entity.HasKey(e => e.Id);
+
+            // Indexes for FHIR search performance
+
+            // Index for searching by patient reference (most common for lab results)
+            entity.HasIndex(e => e.PatientId)
+                .HasDatabaseName("IX_Observations_PatientId");
+
+            // Index for searching by observation code (LOINC)
+            entity.HasIndex(e => e.Code)
+                .HasDatabaseName("IX_Observations_Code");
+
+            // Index for searching by status
+            entity.HasIndex(e => e.Status)
+                .HasDatabaseName("IX_Observations_Status");
+
+            // Index for searching by category
+            entity.HasIndex(e => e.Category)
+                .HasDatabaseName("IX_Observations_Category");
+
+            // Index for searching by date
+            entity.HasIndex(e => e.EffectiveDateTime)
+                .HasDatabaseName("IX_Observations_EffectiveDateTime");
+
+            // Index for _lastUpdated FHIR search parameter
+            entity.HasIndex(e => e.LastUpdated)
+                .HasDatabaseName("IX_Observations_LastUpdated");
+
+            // Index for filtering out soft-deleted resources
+            entity.HasIndex(e => e.IsDeleted)
+                .HasDatabaseName("IX_Observations_IsDeleted");
+
+            // Compound index for patient + date queries (very common pattern)
+            entity.HasIndex(e => new { e.PatientId, e.EffectiveDateTime })
+                .HasDatabaseName("IX_Observations_PatientId_EffectiveDateTime");
+
+            // Column configurations
+            entity.Property(e => e.Id)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            var jsonColumnType = Database.IsNpgsql() ? "jsonb" : "TEXT";
+            entity.Property(e => e.FhirJson)
+                .HasColumnType(jsonColumnType)
+                .IsRequired();
+
+            entity.Property(e => e.PatientId)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.Code)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.CodeDisplay)
+                .HasMaxLength(200);
+
+            entity.Property(e => e.Status)
+                .HasMaxLength(20);
+
+            entity.Property(e => e.Category)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.ValueUnit)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.ValueCodeableConcept)
+                .HasMaxLength(100);
 
             entity.Property(e => e.CreatedAt)
                 .IsRequired();
