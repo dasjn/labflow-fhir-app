@@ -1,0 +1,38 @@
+{
+  "resourceType": "Patient",
+  "name": [
+    {
+      "use": "official",
+      "family": "García",
+      "given": ["Juan", "Carlos"]
+    }
+  ],
+  "gender": "male",
+  "birthDate": "1985-03-15",
+  "identifier": [
+    {
+      "system": "urn:oid:2.16.840.1.113883.2.4.6.3",
+      "value": "12345678"
+    }
+  ],
+  "telecom": [
+    {
+      "system": "phone",
+      "value": "+34 666 123 456",
+      "use": "mobile"
+    },
+    {
+      "system": "email",
+      "value": "juan.garcia@example.com"
+    }
+  ],
+  "address": [
+    {
+      "use": "home",
+      "line": ["Calle Mayor 123"],
+      "city": "Madrid",
+      "postalCode": "28001",
+      "country": "ES"
+    }
+  ]
+}
