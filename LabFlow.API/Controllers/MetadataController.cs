@@ -208,6 +208,83 @@ public class MetadataController : ControllerBase
                             ConditionalRead = CapabilityStatement.ConditionalReadStatus.NotSupported,
                             ConditionalUpdate = false,
                             ConditionalDelete = CapabilityStatement.ConditionalDeleteStatus.NotSupported
+                        },
+
+                        // DiagnosticReport resource capabilities
+                        new CapabilityStatement.ResourceComponent
+                        {
+                            Type = "DiagnosticReport",
+                            Profile = "http://hl7.org/fhir/StructureDefinition/DiagnosticReport",
+                            Documentation = "Grouped laboratory reports with multiple test results",
+
+                            // Supported interactions
+                            Interaction = new List<CapabilityStatement.ResourceInteractionComponent>
+                            {
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Read,
+                                    Documentation = "Read DiagnosticReport by ID"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Create,
+                                    Documentation = "Create new DiagnosticReport resource. Validates patient and observation references exist."
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.SearchType,
+                                    Documentation = "Search for DiagnosticReport resources"
+                                }
+                            },
+
+                            // Supported search parameters
+                            SearchParam = new List<CapabilityStatement.SearchParamComponent>
+                            {
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "patient",
+                                    Type = SearchParamType.Reference,
+                                    Documentation = "Search by patient reference. Accepts 'Patient/123' or '123'. Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "code",
+                                    Type = SearchParamType.Token,
+                                    Documentation = "Search by report code (LOINC panel codes). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "category",
+                                    Type = SearchParamType.Token,
+                                    Documentation = "Search by service category (LAB, RAD, PATH, etc.). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "date",
+                                    Type = SearchParamType.Date,
+                                    Documentation = "Search by effective date (when study was performed). Format: YYYY-MM-DD. Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "issued",
+                                    Type = SearchParamType.Date,
+                                    Documentation = "Search by issued date (when report was published). Format: YYYY-MM-DD. Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "status",
+                                    Type = SearchParamType.Token,
+                                    Documentation = "Search by status (registered, partial, preliminary, final, etc.). Exact match."
+                                }
+                            },
+
+                            Versioning = CapabilityStatement.ResourceVersionPolicy.Versioned,
+                            ReadHistory = false,
+                            UpdateCreate = false,
+                            ConditionalCreate = false,
+                            ConditionalRead = CapabilityStatement.ConditionalReadStatus.NotSupported,
+                            ConditionalUpdate = false,
+                            ConditionalDelete = CapabilityStatement.ConditionalDeleteStatus.NotSupported
                         }
                     }
                 }

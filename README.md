@@ -59,9 +59,18 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
   - [x] Search by patient, code, category, date, status
   - [x] **Unit tests** - 16 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
 
+- [x] **DiagnosticReport Resource** (COMPLETED ✅)
+  - [x] Entity model for grouped laboratory reports
+  - [x] Database schema with optimized indexes (patient+issued compound index)
+  - [x] Controller with GET/POST/SEARCH endpoints
+  - [x] Patient and observation references validation
+  - [x] LOINC panel code support (e.g., CBC, Lipid Panel)
+  - [x] Search by patient, code, category, date, issued, status
+  - [x] **Unit tests** - 18 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
+
 - [x] **CapabilityStatement** (COMPLETED ✅)
   - [x] GET /metadata endpoint
-  - [x] Documents all supported resources (Patient, Observation)
+  - [x] Documents all supported resources (Patient, Observation, DiagnosticReport)
   - [x] Lists all interactions (read, create, search-type)
   - [x] Details all search parameters with types and documentation
   - [x] FHIR R4 compliance
@@ -69,14 +78,14 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 ### CI/CD & Automation
 - [x] **GitHub Actions** - Automated build & test pipeline
   - [x] Runs on every push to main
-  - [x] Executes all 29 unit tests
+  - [x] Executes all 48 unit tests
   - [x] Build status badge in README
 
 ---
 
 ## 🚧 In Progress
 
-- **Phase 3 Planning** - Next features: DiagnosticReport, ServiceRequest, or JWT Authentication
+- None - All Phase 3 core resources completed!
 
 ---
 
@@ -149,6 +158,35 @@ GET /Observation?status=final                 # By status
 GET /Observation?patient=123&code=2339-0      # Combined search
 ```
 
+**DiagnosticReport Resource (Grouped Lab Reports):**
+```bash
+# Create diagnostic report (grouping multiple observations)
+POST /DiagnosticReport
+Content-Type: application/json
+Body: {
+  "resourceType": "DiagnosticReport",
+  "subject": { "reference": "Patient/123" },
+  "result": [
+    { "reference": "Observation/obs1" },
+    { "reference": "Observation/obs2" }
+  ],
+  ...
+}
+
+# Read diagnostic report by ID
+GET /DiagnosticReport/{id}
+
+# Search diagnostic reports
+GET /DiagnosticReport?patient=Patient/123     # All reports for a patient
+GET /DiagnosticReport?patient=123             # Also accepts just the ID
+GET /DiagnosticReport?code=58410-2            # By LOINC panel code (CBC)
+GET /DiagnosticReport?category=LAB            # By category (LAB, RAD, PATH)
+GET /DiagnosticReport?date=2025-10-13         # By effective date (study performed)
+GET /DiagnosticReport?issued=2025-10-13       # By issued date (report published)
+GET /DiagnosticReport?status=final            # By status
+GET /DiagnosticReport?patient=123&code=58410-2  # Combined search
+```
+
 ### Run the API
 
 ```bash
@@ -184,7 +222,7 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
 ```
 
 **Test Coverage:**
-- **29 focused unit tests** covering Patient and Observation resources
+- **48 focused unit tests** covering Patient, Observation, and DiagnosticReport resources
 - **Patient** (13 tests):
   - GetPatient (2): Valid ID, Not Found scenarios
   - CreatePatient (3): Valid resource, Invalid content-type, FHIR validation
@@ -193,10 +231,14 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
   - GetObservation (2): Valid ID, Not Found scenarios
   - CreateObservation (5): Valid resource, Invalid content-type, Missing status/code, Non-existent patient reference
   - SearchObservations (9): Individual parameters (patient, code, category, date, status), patient reference format handling, combined filters, empty results, invalid date
+- **DiagnosticReport** (18 tests):
+  - GetDiagnosticReport (2): Valid ID, Not Found scenarios
+  - CreateDiagnosticReport (7): Valid report, Invalid content-type, Missing status/code, Non-existent patient, Non-existent observation, Invalid reference type
+  - SearchDiagnosticReports (10): Individual parameters (patient, code, category, date, issued, status), combined filters, empty results, invalid date/issued
 - **Test isolation**: Each test uses unique in-memory database
 - **Framework**: xUnit + FluentAssertions + EF Core InMemory
 
-All tests passing ✅ (29/29)
+All tests passing ✅ (48/48)
 
 ### Database Commands
 
@@ -275,6 +317,24 @@ LabFlow/
 
 **Metadata**: Same as Patient (VersionId, IsDeleted, CreatedAt, LastUpdated)
 
+### DiagnosticReportEntity Fields
+
+**Searchable Fields** (indexed for performance):
+- `PatientId` → FHIR search: `patient` or `subject`
+- `Code` → FHIR search: `code` (LOINC panel codes, e.g., "58410-2" for CBC)
+- `Category` → FHIR search: `category` (LAB, RAD, PATH, etc.)
+- `Status` → FHIR search: `status` (registered, partial, preliminary, final, etc.)
+- `EffectiveDateTime` → FHIR search: `date` (when study was performed)
+- `Issued` → FHIR search: `issued` (when report was published)
+- `ResultIds` → Comma-separated observation IDs (enables searching by result)
+- `Conclusion` → Clinical interpretation text
+- `LastUpdated` → FHIR search: `_lastUpdated`
+
+**Compound Index**:
+- `PatientId + Issued` - Optimized for "get patient's recent lab reports"
+
+**Metadata**: Same as Patient (VersionId, IsDeleted, CreatedAt, LastUpdated)
+
 ---
 
 ## 🎯 Roadmap
@@ -287,8 +347,10 @@ LabFlow/
 - [x] **CapabilityStatement** (GET /metadata) - FHIR standard server documentation ✅
 - [x] **CI/CD Pipeline** (GitHub Actions) - Automated build & test ✅
 
-### Phase 3: Advanced Features (Future)
-- [ ] DiagnosticReport - Group multiple observations
+### Phase 3: Grouped Reports & References (Week 3) - COMPLETED ✅
+- [x] **DiagnosticReport** (CRUD + search + patient/observation validation + 18 tests) ✅
+
+### Phase 4: Advanced Features (Future)
 - [ ] ServiceRequest - Laboratory order workflow
 - [ ] JWT authentication
 - [ ] Advanced FHIR search (_include, _revinclude)
@@ -296,7 +358,7 @@ LabFlow/
 - [ ] PostgreSQL migration
 - [ ] Azure deployment
 
-### Phase 3: Enhanced Validation (Future)
+### Phase 5: Enhanced Validation (Future)
 - [ ] **LOINC code validation** for Observation.code
   - Format validation (regex: `^\d{1,5}-\d$`)
   - Optional: Validate against LOINC database subset
