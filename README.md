@@ -45,7 +45,7 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
   - [x] FHIR validation (basic)
   - [x] Firely SDK integration (serialization/deserialization)
   - [x] **Tested successfully** - GET and POST working correctly
-  - [ ] Search by name, identifier, birthdate (NEXT)
+  - [x] **Search endpoints implemented** - name, identifier, birthdate, gender with Bundle responses
   - [ ] Unit tests (NEXT)
 
 ---
@@ -77,6 +77,26 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 ### Prerequisites
 - .NET 8 SDK
 - (Optional) PostgreSQL if using production setup
+
+### API Endpoints
+
+**Patient Resource:**
+```bash
+# Create patient
+POST /Patient
+Content-Type: application/json
+Body: { "resourceType": "Patient", ... }
+
+# Read patient by ID
+GET /Patient/{id}
+
+# Search patients
+GET /Patient?name=García
+GET /Patient?identifier=12345678
+GET /Patient?birthdate=1985-03-15
+GET /Patient?gender=male
+GET /Patient?name=Smith&gender=male  # Combined search
+```
 
 ### Run the API
 

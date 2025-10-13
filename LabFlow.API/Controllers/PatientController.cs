@@ -74,6 +74,120 @@ public class PatientController : ControllerBase
     }
 
     /// <summary>
+    /// Search for Patient resources
+    /// FHIR operation: GET [base]/Patient?[parameters]
+    /// </summary>
+    /// <param name="name">Search by family or given name (partial match)</param>
+    /// <param name="identifier">Search by identifier (exact match)</param>
+    /// <param name="birthdate">Search by birth date (exact match, format: YYYY-MM-DD)</param>
+    /// <param name="gender">Search by gender (male, female, other, unknown)</param>
+    /// <returns>Bundle with search results</returns>
+    [HttpGet]
+    [ProducesResponseType(typeof(Bundle), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> SearchPatients(
+        [FromQuery] string? name,
+        [FromQuery] string? identifier,
+        [FromQuery] string? birthdate,
+        [FromQuery] string? gender)
+    {
+        _logger.LogInformation("GET Patient - Search with name={Name}, identifier={Identifier}, birthdate={Birthdate}, gender={Gender}",
+            name, identifier, birthdate, gender);
+
+        // Start with base query (exclude soft-deleted)
+        var query = _context.Patients.Where(p => !p.IsDeleted).AsQueryable();
+
+        // Apply search filters
+        if (!string.IsNullOrEmpty(name))
+        {
+            // Search in both FamilyName and GivenName (case-insensitive partial match)
+            var nameLower = name.ToLower();
+            query = query.Where(p =>
+                (p.FamilyName != null && p.FamilyName.ToLower().Contains(nameLower)) ||
+                (p.GivenName != null && p.GivenName.ToLower().Contains(nameLower)));
+        }
+
+        if (!string.IsNullOrEmpty(identifier))
+        {
+            // Exact match on identifier
+            query = query.Where(p => p.Identifier == identifier);
+        }
+
+        if (!string.IsNullOrEmpty(birthdate))
+        {
+            // Validate and parse birthdate
+            if (!DateTime.TryParse(birthdate, out var parsedDate))
+            {
+                return BadRequest(CreateOperationOutcome(
+                    $"Invalid birthdate format: '{birthdate}'. Expected format: YYYY-MM-DD",
+                    OperationOutcome.IssueSeverity.Error,
+                    OperationOutcome.IssueType.Invalid));
+            }
+
+            // Exact date match (comparing only date part)
+            query = query.Where(p => p.BirthDate.HasValue &&
+                p.BirthDate.Value.Date == parsedDate.Date);
+        }
+
+        if (!string.IsNullOrEmpty(gender))
+        {
+            // Case-insensitive exact match on gender
+            var genderLower = gender.ToLower();
+
+            // Validate gender value (FHIR allows: male, female, other, unknown)
+            if (genderLower != "male" && genderLower != "female" &&
+                genderLower != "other" && genderLower != "unknown")
+            {
+                return BadRequest(CreateOperationOutcome(
+                    $"Invalid gender value: '{gender}'. Valid values: male, female, other, unknown",
+                    OperationOutcome.IssueSeverity.Error,
+                    OperationOutcome.IssueType.Invalid));
+            }
+
+            query = query.Where(p => p.Gender == genderLower);
+        }
+
+        // Execute query
+        var patientEntities = await query.ToListAsync();
+
+        _logger.LogInformation("Found {Count} patients matching search criteria", patientEntities.Count);
+
+        // Build FHIR Bundle with search results
+        var bundle = new Bundle
+        {
+            Type = Bundle.BundleType.Searchset,
+            Total = patientEntities.Count,
+            Entry = new List<Bundle.EntryComponent>()
+        };
+
+        foreach (var entity in patientEntities)
+        {
+            // Deserialize Patient from stored JSON
+            var patient = _parser.Parse<Patient>(entity.FhirJson);
+
+            // Update metadata
+            patient.Meta = new Meta
+            {
+                VersionId = entity.VersionId.ToString(),
+                LastUpdated = entity.LastUpdated
+            };
+
+            // Add to bundle
+            bundle.Entry.Add(new Bundle.EntryComponent
+            {
+                FullUrl = $"{Request.Scheme}://{Request.Host}/Patient/{patient.Id}",
+                Resource = patient,
+                Search = new Bundle.SearchComponent
+                {
+                    Mode = Bundle.SearchEntryMode.Match
+                }
+            });
+        }
+
+        return Ok(bundle);
+    }
+
+    /// <summary>
     /// Create a new Patient resource
     /// FHIR operation: POST [base]/Patient
     /// </summary>
