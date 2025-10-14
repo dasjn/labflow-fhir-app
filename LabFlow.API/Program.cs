@@ -1,6 +1,11 @@
+using System.Text;
 using Hl7.Fhir.Serialization;
+using LabFlow.API.Configuration;
 using LabFlow.API.Data;
+using LabFlow.API.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 
 // Configure Serilog for structured logging
@@ -45,6 +50,57 @@ try
     };
     builder.Services.AddSingleton(new FhirJsonParser(parserSettings));
 
+    // Configure JWT Settings from appsettings.json
+    var jwtSettings = new JwtSettings();
+    builder.Configuration.GetSection("JwtSettings").Bind(jwtSettings);
+    jwtSettings.Validate(); // Validate on startup
+    builder.Services.AddSingleton(jwtSettings);
+
+    // Register Authentication Service
+    builder.Services.AddScoped<IAuthService, AuthService>();
+
+    // Configure JWT Authentication
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
+    .AddJwtBearer(options =>
+    {
+        options.SaveToken = true;
+        options.RequireHttpsMetadata = true; // ✅ HTTPS enforcement
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ClockSkew = TimeSpan.FromSeconds(5), // 5 seconds tolerance for clock skew (industry standard)
+            ValidIssuer = jwtSettings.Issuer,
+            ValidAudience = jwtSettings.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
+        };
+
+        // Audit logging for authentication events
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                Log.Warning("JWT authentication failed: {Error}", context.Exception.Message);
+                return System.Threading.Tasks.Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var userId = context.Principal?.FindFirst("sub")?.Value;
+                Log.Information("JWT token validated successfully for UserId: {UserId}", userId);
+                return System.Threading.Tasks.Task.CompletedTask;
+            }
+        };
+    });
+
+    builder.Services.AddAuthorization();
+
     // Add Swagger/OpenAPI
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
@@ -53,23 +109,53 @@ try
         {
             Title = "LabFlow FHIR API",
             Version = "v1",
-            Description = "FHIR R4 compliant API for laboratory results interoperability",
+            Description = "FHIR R4 compliant API for laboratory results interoperability with JWT authentication",
             Contact = new Microsoft.OpenApi.Models.OpenApiContact
             {
                 Name = "David",
                 Email = "contact@labflow.com"
             }
         });
+
+        // Add JWT Bearer authentication to Swagger UI
+        c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+        {
+            Name = "Authorization",
+            Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            Scheme = "Bearer",
+            BearerFormat = "JWT",
+            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            Description = "JWT Authorization header using the Bearer scheme. Enter your token in the text input below. Example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'"
+        });
+
+        c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+        {
+            {
+                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                {
+                    Reference = new Microsoft.OpenApi.Models.OpenApiReference
+                    {
+                        Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
+                        Id = "Bearer"
+                    }
+                },
+                Array.Empty<string>()
+            }
+        });
     });
 
-    // Add CORS (for development)
+    // Configure CORS with restricted origins (FHIR security best practice)
+    var allowedOrigins = builder.Configuration.GetSection("CorsSettings:AllowedOrigins").Get<string[]>()
+                         ?? new[] { "http://localhost:3000", "http://localhost:5173" };
+
     builder.Services.AddCors(options =>
     {
-        options.AddPolicy("AllowAll", policy =>
+        options.AddPolicy("FhirCors", policy =>
         {
-            policy.AllowAnyOrigin()
+            policy.WithOrigins(allowedOrigins)
                   .AllowAnyMethod()
-                  .AllowAnyHeader();
+                  .AllowAnyHeader()
+                  .AllowCredentials(); // Required for JWT tokens
         });
     });
 
@@ -86,13 +172,25 @@ try
         });
     }
 
+    // HTTPS redirection (security best practice)
     app.UseHttpsRedirection();
-    app.UseCors("AllowAll");
+
+    // HSTS (HTTP Strict Transport Security) for production
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseHsts(); // Forces HTTPS for future requests
+    }
+
+    // CORS with restricted origins
+    app.UseCors("FhirCors");
 
     // Add Serilog request logging
     app.UseSerilogRequestLogging();
 
+    // Authentication & Authorization (ORDER MATTERS)
+    app.UseAuthentication(); // ← Must be before UseAuthorization
     app.UseAuthorization();
+
     app.MapControllers();
 
     // Simple health check endpoint

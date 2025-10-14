@@ -2,6 +2,7 @@ using Hl7.Fhir.Model;
 using Hl7.Fhir.Serialization;
 using LabFlow.API.Data;
 using LabFlow.API.Data.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,7 +11,9 @@ namespace LabFlow.API.Controllers;
 /// <summary>
 /// FHIR Patient Resource endpoint
 /// REQ-FHIR-001: Implement Patient CRUD operations following FHIR R4 specification
+/// REQ-FHIR-006: Secure with JWT authentication - Doctors and Admins only
 /// </summary>
+[Authorize(Roles = "Doctor,Admin")] // Only doctors and admins can manage patients
 [ApiController]
 [Route("[controller]")]
 [Produces("application/fhir+json", "application/json")]

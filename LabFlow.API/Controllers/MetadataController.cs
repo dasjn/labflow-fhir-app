@@ -65,10 +65,49 @@ public class MetadataController : ControllerBase
                     Mode = CapabilityStatement.RestfulCapabilityMode.Server,
                     Documentation = "Main FHIR endpoint for laboratory results exchange",
 
-                    // Security (for future JWT implementation)
+                    // Security (JWT Bearer token authentication)
                     Security = new CapabilityStatement.SecurityComponent
                     {
-                        Description = "Currently no authentication required. JWT authentication planned for production deployment."
+                        Cors = true,
+                        Service = new List<CodeableConcept>
+                        {
+                            new CodeableConcept
+                            {
+                                Coding = new List<Coding>
+                                {
+                                    new Coding
+                                    {
+                                        System = "http://terminology.hl7.org/CodeSystem/restful-security-service",
+                                        Code = "OAuth",
+                                        Display = "OAuth"
+                                    }
+                                },
+                                Text = "JWT Bearer Token Authentication"
+                            }
+                        },
+                        Description = @"JWT Bearer token authentication required for all FHIR resource endpoints (except /metadata).
+
+**Authentication Flow:**
+1. Register: POST /Auth/register (email, password, role)
+2. Login: POST /Auth/login → Returns JWT token
+3. Use token: Include 'Authorization: Bearer {token}' header in all FHIR requests
+
+**Roles and Permissions:**
+- **Doctor**: Can manage patients, order tests (ServiceRequest), and view all results
+- **LabTechnician**: Can create/view observations and diagnostic reports
+- **Admin**: Full access to all resources
+
+**Token Details:**
+- Algorithm: HS256 (HMAC-SHA256)
+- Expiration: 60 minutes
+- Claims: sub (userId), email, role, fhirUser, scope
+
+**Example:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**HTTPS Required:** All authentication endpoints require HTTPS in production."
                     },
 
                     // Supported resources

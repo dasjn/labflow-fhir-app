@@ -114,6 +114,262 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 
 ---
 
+## 🔐 Authentication
+
+**LabFlow FHIR API uses JWT Bearer token authentication** for all FHIR resource endpoints (except `/metadata` which is public per FHIR spec).
+
+### Security Features
+
+✅ **BCrypt Password Hashing** (work factor 11, 2^11 iterations)
+✅ **JWT with HS256** (HMAC-SHA256 signing)
+✅ **60-minute token expiration**
+✅ **Role-based authorization** (Doctor, LabTechnician, Admin)
+✅ **HTTPS enforcement** + HSTS (HTTP Strict Transport Security)
+✅ **CORS restricted** to specific origins
+✅ **Comprehensive audit logging** (WHO accessed WHAT WHEN)
+✅ **FHIR-compatible** (documented in CapabilityStatement security section)
+
+### User Roles & Permissions
+
+| Role | Patient | Observation | DiagnosticReport | ServiceRequest |
+|------|---------|-------------|------------------|----------------|
+| **Doctor** | ✅ Full | ✅ Full | ✅ Full | ✅ Full (can order tests) |
+| **LabTechnician** | ❌ No access | ✅ Full | ✅ Full | ✅ Read only |
+| **Admin** | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
+
+### Authentication Endpoints
+
+#### 1. Register a New User
+
+```bash
+POST /Auth/register
+Content-Type: application/json
+
+{
+  "email": "doctor@hospital.com",
+  "password": "SecurePassword123!",
+  "role": "Doctor",
+  "fullName": "Dr. Jane Smith"
+}
+
+# Response (201 Created):
+{
+  "userId": "abc123",
+  "email": "doctor@hospital.com",
+  "role": "Doctor",
+  "message": "User registered successfully"
+}
+```
+
+**Available Roles**: `Doctor`, `LabTechnician`, `Admin`
+
+**Password Requirements**:
+- Minimum 8 characters
+- Stored as BCrypt hash (never plain text)
+
+#### 2. Login and Get JWT Token
+
+```bash
+POST /Auth/login
+Content-Type: application/json
+
+{
+  "email": "doctor@hospital.com",
+  "password": "SecurePassword123!"
+}
+
+# Response (200 OK):
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhYmMxMjMiLCJlbWFpbCI6ImRvY3RvckBob3NwaXRhbC5jb20iLCJyb2xlIjoiRG9jdG9yIiwianRpIjoiZGVmNDU2IiwiaWF0IjoiMTczOTUzMDAwMCIsImZoaXJVc2VyIjoiUHJhY3RpdGlvbmVyL2FiYzEyMyIsInNjb3BlIjoidXNlci8qLnJlYWQgdXNlci9QYXRpZW50LndyaXRlIHVzZXIvT2JzZXJ2YXRpb24ucmVhZCB1c2VyL0RpYWdub3N0aWNSZXBvcnQucmVhZCIsImV4cCI6MTczOTUzMzYwMCwiaXNzIjoiTGFiRmxvd0FQSSIsImF1ZCI6IkxhYkZsb3dDbGllbnRzIn0.xxxxxxxxxxxxxxxxxxxxx",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "message": "Login successful"
+}
+```
+
+**JWT Claims** (automatically included):
+- `sub`: User ID
+- `email`: User email
+- `role`: User role (for authorization)
+- `fhirUser`: FHIR Practitioner reference (e.g., "Practitioner/abc123")
+- `scope`: SMART on FHIR compatible scopes (future-ready)
+- `exp`: Expiration timestamp (60 minutes)
+- `iss`: Issuer ("LabFlowAPI")
+- `aud`: Audience ("LabFlowClients")
+
+#### 3. Get Current User Info
+
+```bash
+GET /Auth/me
+Authorization: Bearer {your-token-here}
+
+# Response (200 OK):
+{
+  "userId": "abc123",
+  "email": "doctor@hospital.com",
+  "role": "Doctor",
+  "fullName": "Dr. Jane Smith"
+}
+```
+
+### Using JWT Tokens with FHIR Endpoints
+
+**All FHIR resource endpoints require the JWT token in the Authorization header:**
+
+```bash
+# Example: Get a patient (requires Doctor or Admin role)
+GET /Patient/123
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+# Example: Create an observation (any authenticated user)
+POST /Observation
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/fhir+json
+
+{
+  "resourceType": "Observation",
+  "status": "final",
+  "code": {
+    "coding": [{
+      "system": "http://loinc.org",
+      "code": "2339-0",
+      "display": "Glucose [Mass/volume] in Blood"
+    }]
+  },
+  "subject": { "reference": "Patient/123" },
+  "valueQuantity": {
+    "value": 95,
+    "unit": "mg/dL",
+    "system": "http://unitsofmeasure.org",
+    "code": "mg/dL"
+  }
+}
+```
+
+### Error Responses
+
+**401 Unauthorized** (missing or invalid token):
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc7235#section-3.1",
+  "title": "Unauthorized",
+  "status": 401
+}
+```
+
+**403 Forbidden** (insufficient permissions):
+```json
+{
+  "type": "https://tools.ietf.org/html/rfc7231#section-6.5.3",
+  "title": "Forbidden",
+  "status": 403
+}
+```
+
+### Testing with curl
+
+**Complete authentication flow:**
+
+```bash
+# 1. Register a doctor
+curl -X POST https://localhost:7xxx/Auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "doctor@hospital.com",
+    "password": "SecurePass123!",
+    "role": "Doctor",
+    "fullName": "Dr. Jane Smith"
+  }'
+
+# 2. Login and get token
+TOKEN=$(curl -X POST https://localhost:7xxx/Auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "doctor@hospital.com",
+    "password": "SecurePass123!"
+  }' | jq -r '.token')
+
+# 3. Create a patient (requires token)
+curl -X POST https://localhost:7xxx/Patient \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/fhir+json" \
+  -d '{
+    "resourceType": "Patient",
+    "name": [{
+      "family": "García",
+      "given": ["Juan", "Carlos"]
+    }],
+    "gender": "male",
+    "birthDate": "1985-03-15"
+  }'
+
+# 4. Search patients (requires token)
+curl -X GET "https://localhost:7xxx/Patient?name=García" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Swagger UI Authentication
+
+1. **Open Swagger UI** at `https://localhost:7xxx/`
+2. **Click "Authorize" button** (lock icon in top right)
+3. **Enter your JWT token** (with or without "Bearer " prefix)
+4. **Click "Authorize"**
+5. **All requests will now include the Authorization header automatically**
+
+### Security Configuration
+
+**appsettings.json** (development - DO NOT commit secrets to git):
+```json
+{
+  "JwtSettings": {
+    "SecretKey": "ThisIsADevelopmentSecretKeyWithAtLeast32CharactersForHS256Algorithm",
+    "Issuer": "LabFlowAPI",
+    "Audience": "LabFlowClients",
+    "ExpirationMinutes": 60,
+    "AuthProvider": "JWT"
+  },
+  "CorsSettings": {
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://localhost:7000"
+    ]
+  }
+}
+```
+
+**Production:** Use environment variables or Azure Key Vault for secrets:
+```bash
+export JwtSettings__SecretKey="your-production-secret-key-minimum-32-characters-random"
+export JwtSettings__Issuer="https://yourapi.com"
+export JwtSettings__Audience="https://yourapi.com/clients"
+```
+
+### FHIR Compliance
+
+JWT authentication is **documented in the CapabilityStatement** (GET `/metadata`):
+
+```json
+{
+  "security": {
+    "cors": true,
+    "service": [{
+      "coding": [{
+        "system": "http://terminology.hl7.org/CodeSystem/restful-security-service",
+        "code": "OAuth",
+        "display": "OAuth"
+      }],
+      "text": "JWT Bearer Token Authentication"
+    }],
+    "description": "JWT Bearer token authentication required..."
+  }
+}
+```
+
+This follows **FHIR R4 security best practices** and is compatible with future migration to **SMART on FHIR** (OAuth 2.0).
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -423,9 +679,20 @@ LabFlow/
 - [x] **ServiceRequest** (CRUD + search + patient validation + 16 tests) ✅
 - Complete laboratory workflow: Order (ServiceRequest) → Result (Observation) → Report (DiagnosticReport)
 
-### Phase 5: Advanced Features (Future)
-- [ ] JWT authentication
-- [ ] Advanced FHIR search (_include, _revinclude)
+### Phase 5: Security & Authentication (Week 5) - COMPLETED ✅
+- [x] **JWT Bearer Token Authentication** ✅
+  - User registration and login endpoints
+  - BCrypt password hashing (work factor 11)
+  - HS256 JWT signing with 60-minute expiration
+  - Role-based authorization (Doctor, LabTechnician, Admin)
+  - HTTPS enforcement + HSTS
+  - CORS restricted to specific origins
+  - Comprehensive audit logging (WHO, WHAT, WHEN)
+  - CapabilityStatement security documentation updated
+  - Swagger UI with Bearer token support
+
+### Phase 6: Advanced Features (Future)
+- [ ] Advanced FHIR search (_include, _revinclude, sorting, pagination)
 - [ ] Integration tests
 - [ ] PostgreSQL migration
 - [ ] Azure deployment

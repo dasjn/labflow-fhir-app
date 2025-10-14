@@ -33,6 +33,11 @@ public class FhirDbContext : DbContext
     /// </summary>
     public DbSet<ServiceRequestEntity> ServiceRequests { get; set; } = null!;
 
+    /// <summary>
+    /// Users table (JWT authentication)
+    /// </summary>
+    public DbSet<UserEntity> Users { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -391,6 +396,67 @@ public class FhirDbContext : DbContext
 
             entity.Property(e => e.VersionId)
                 .IsRequired();
+
+            entity.Property(e => e.IsDeleted)
+                .IsRequired()
+                .HasDefaultValue(false);
+        });
+
+        // Configure User entity (JWT authentication)
+        modelBuilder.Entity<UserEntity>(entity =>
+        {
+            entity.ToTable("Users");
+
+            // Primary key
+            entity.HasKey(e => e.Id);
+
+            // Unique index for email (used for login)
+            entity.HasIndex(e => e.Email)
+                .IsUnique()
+                .HasDatabaseName("IX_Users_Email");
+
+            // Index for role-based queries
+            entity.HasIndex(e => e.Role)
+                .HasDatabaseName("IX_Users_Role");
+
+            // Index for filtering active users
+            entity.HasIndex(e => e.IsActive)
+                .HasDatabaseName("IX_Users_IsActive");
+
+            // Index for filtering out soft-deleted users
+            entity.HasIndex(e => e.IsDeleted)
+                .HasDatabaseName("IX_Users_IsDeleted");
+
+            // Column configurations
+            entity.Property(e => e.Id)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(e => e.Email)
+                .HasMaxLength(255)
+                .IsRequired();
+
+            // BCrypt hash is always 60 characters
+            entity.Property(e => e.PasswordHash)
+                .HasMaxLength(60)
+                .IsRequired();
+
+            entity.Property(e => e.Role)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            entity.Property(e => e.FullName)
+                .HasMaxLength(200);
+
+            entity.Property(e => e.CreatedAt)
+                .IsRequired();
+
+            entity.Property(e => e.LastUpdated)
+                .IsRequired();
+
+            entity.Property(e => e.IsActive)
+                .IsRequired()
+                .HasDefaultValue(true);
 
             entity.Property(e => e.IsDeleted)
                 .IsRequired()
