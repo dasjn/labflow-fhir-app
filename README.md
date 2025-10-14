@@ -68,9 +68,18 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
   - [x] Search by patient, code, category, date, issued, status
   - [x] **Unit tests** - 18 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
 
+- [x] **ServiceRequest Resource** (COMPLETED ✅)
+  - [x] Entity model for laboratory test orders
+  - [x] Database schema with optimized indexes (patient+authored compound index)
+  - [x] Controller with GET/POST/SEARCH endpoints
+  - [x] Patient reference validation
+  - [x] LOINC code support for test orders
+  - [x] Search by patient, code, status, intent, category, authored, requester, performer
+  - [x] **Unit tests** - 16 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
+
 - [x] **CapabilityStatement** (COMPLETED ✅)
   - [x] GET /metadata endpoint
-  - [x] Documents all supported resources (Patient, Observation, DiagnosticReport)
+  - [x] Documents all supported resources (Patient, Observation, DiagnosticReport, ServiceRequest)
   - [x] Lists all interactions (read, create, search-type)
   - [x] Details all search parameters with types and documentation
   - [x] FHIR R4 compliance
@@ -78,14 +87,14 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 ### CI/CD & Automation
 - [x] **GitHub Actions** - Automated build & test pipeline
   - [x] Runs on every push to main
-  - [x] Executes all 48 unit tests
+  - [x] Executes all 64 unit tests
   - [x] Build status badge in README
 
 ---
 
 ## 🚧 In Progress
 
-- None - All Phase 3 core resources completed!
+- None - All Phase 4 core resources completed!
 
 ---
 
@@ -187,6 +196,42 @@ GET /DiagnosticReport?status=final            # By status
 GET /DiagnosticReport?patient=123&code=58410-2  # Combined search
 ```
 
+**ServiceRequest Resource (Laboratory Orders):**
+```bash
+# Create service request (laboratory test order)
+POST /ServiceRequest
+Content-Type: application/json
+Body: {
+  "resourceType": "ServiceRequest",
+  "status": "active",
+  "intent": "order",
+  "code": {
+    "coding": [{
+      "system": "http://loinc.org",
+      "code": "2339-0",
+      "display": "Glucose [Mass/volume] in Blood"
+    }]
+  },
+  "subject": { "reference": "Patient/123" },
+  ...
+}
+
+# Read service request by ID
+GET /ServiceRequest/{id}
+
+# Search service requests
+GET /ServiceRequest?patient=Patient/123       # All orders for a patient
+GET /ServiceRequest?patient=123               # Also accepts just the ID
+GET /ServiceRequest?code=2339-0               # By LOINC code (Glucose test)
+GET /ServiceRequest?status=active             # By status
+GET /ServiceRequest?intent=order              # By intent (order, plan, etc.)
+GET /ServiceRequest?category=108252007        # By category (SNOMED CT)
+GET /ServiceRequest?authored=2025-10-13       # By authored date
+GET /ServiceRequest?requester=Practitioner/456  # By requester
+GET /ServiceRequest?performer=Organization/789  # By performer
+GET /ServiceRequest?patient=123&status=active   # Combined search
+```
+
 ### Run the API
 
 ```bash
@@ -222,7 +267,7 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
 ```
 
 **Test Coverage:**
-- **48 focused unit tests** covering Patient, Observation, and DiagnosticReport resources
+- **64 focused unit tests** covering Patient, Observation, DiagnosticReport, and ServiceRequest resources
 - **Patient** (13 tests):
   - GetPatient (2): Valid ID, Not Found scenarios
   - CreatePatient (3): Valid resource, Invalid content-type, FHIR validation
@@ -235,10 +280,14 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
   - GetDiagnosticReport (2): Valid ID, Not Found scenarios
   - CreateDiagnosticReport (7): Valid report, Invalid content-type, Missing status/code, Non-existent patient, Non-existent observation, Invalid reference type
   - SearchDiagnosticReports (10): Individual parameters (patient, code, category, date, issued, status), combined filters, empty results, invalid date/issued
+- **ServiceRequest** (16 tests):
+  - GetServiceRequest (2): Valid ID, Not Found scenarios
+  - CreateServiceRequest (5): Valid request, Invalid content-type, Missing status/intent, Non-existent patient reference
+  - SearchServiceRequests (10): Individual parameters (patient, code, status, intent, category, authored), patient reference format handling, combined filters, empty results, invalid authored date
 - **Test isolation**: Each test uses unique in-memory database
 - **Framework**: xUnit + FluentAssertions + EF Core InMemory
 
-All tests passing ✅ (48/48)
+All tests passing ✅ (64/64)
 
 ### Database Commands
 
@@ -335,6 +384,26 @@ LabFlow/
 
 **Metadata**: Same as Patient (VersionId, IsDeleted, CreatedAt, LastUpdated)
 
+### ServiceRequestEntity Fields
+
+**Searchable Fields** (indexed for performance):
+- `PatientId` → FHIR search: `patient` or `subject`
+- `Code` → FHIR search: `code` (LOINC test codes, e.g., "2339-0" for Glucose)
+- `Status` → FHIR search: `status` (draft, active, on-hold, revoked, completed, etc.)
+- `Intent` → FHIR search: `intent` (proposal, plan, order, etc.)
+- `Category` → FHIR search: `category` (service category codes)
+- `Priority` → FHIR search: `priority` (routine, urgent, asap, stat)
+- `AuthoredOn` → FHIR search: `authored` (when order was created)
+- `RequesterId` → FHIR search: `requester` (who ordered the test)
+- `PerformerId` → FHIR search: `performer` (who will perform the test)
+- `OccurrenceDateTime` → FHIR search: `occurrence` (when test should occur)
+- `LastUpdated` → FHIR search: `_lastUpdated`
+
+**Compound Index**:
+- `PatientId + AuthoredOn` - Optimized for "get patient's recent lab orders"
+
+**Metadata**: Same as Patient (VersionId, IsDeleted, CreatedAt, LastUpdated)
+
 ---
 
 ## 🎯 Roadmap
@@ -350,15 +419,18 @@ LabFlow/
 ### Phase 3: Grouped Reports & References (Week 3) - COMPLETED ✅
 - [x] **DiagnosticReport** (CRUD + search + patient/observation validation + 18 tests) ✅
 
-### Phase 4: Advanced Features (Future)
-- [ ] ServiceRequest - Laboratory order workflow
+### Phase 4: Laboratory Order Workflow (Week 4) - COMPLETED ✅
+- [x] **ServiceRequest** (CRUD + search + patient validation + 16 tests) ✅
+- Complete laboratory workflow: Order (ServiceRequest) → Result (Observation) → Report (DiagnosticReport)
+
+### Phase 5: Advanced Features (Future)
 - [ ] JWT authentication
 - [ ] Advanced FHIR search (_include, _revinclude)
 - [ ] Integration tests
 - [ ] PostgreSQL migration
 - [ ] Azure deployment
 
-### Phase 5: Enhanced Validation (Future)
+### Phase 6: Enhanced Validation (Future)
 - [ ] **LOINC code validation** for Observation.code
   - Format validation (regex: `^\d{1,5}-\d$`)
   - Optional: Validate against LOINC database subset

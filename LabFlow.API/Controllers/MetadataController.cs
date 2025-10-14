@@ -285,6 +285,95 @@ public class MetadataController : ControllerBase
                             ConditionalRead = CapabilityStatement.ConditionalReadStatus.NotSupported,
                             ConditionalUpdate = false,
                             ConditionalDelete = CapabilityStatement.ConditionalDeleteStatus.NotSupported
+                        },
+
+                        // ServiceRequest resource capabilities
+                        new CapabilityStatement.ResourceComponent
+                        {
+                            Type = "ServiceRequest",
+                            Profile = "http://hl7.org/fhir/StructureDefinition/ServiceRequest",
+                            Documentation = "Laboratory test orders and service requests",
+
+                            // Supported interactions
+                            Interaction = new List<CapabilityStatement.ResourceInteractionComponent>
+                            {
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Read,
+                                    Documentation = "Read ServiceRequest by ID"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Create,
+                                    Documentation = "Create new ServiceRequest resource. Validates patient reference exists."
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.SearchType,
+                                    Documentation = "Search for ServiceRequest resources"
+                                }
+                            },
+
+                            // Supported search parameters
+                            SearchParam = new List<CapabilityStatement.SearchParamComponent>
+                            {
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "patient",
+                                    Type = SearchParamType.Reference,
+                                    Documentation = "Search by patient reference. Accepts 'Patient/123' or '123'. Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "code",
+                                    Type = SearchParamType.Token,
+                                    Documentation = "Search by service code (LOINC test codes). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "status",
+                                    Type = SearchParamType.Token,
+                                    Documentation = "Search by status (draft, active, on-hold, revoked, completed, entered-in-error, unknown). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "intent",
+                                    Type = SearchParamType.Token,
+                                    Documentation = "Search by intent (proposal, plan, directive, order, original-order, reflex-order, filler-order, instance-order, option). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "category",
+                                    Type = SearchParamType.Token,
+                                    Documentation = "Search by service category. Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "authored",
+                                    Type = SearchParamType.Date,
+                                    Documentation = "Search by authored date (when order was created). Format: YYYY-MM-DD. Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "requester",
+                                    Type = SearchParamType.Reference,
+                                    Documentation = "Search by requester reference (who ordered the test). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "performer",
+                                    Type = SearchParamType.Reference,
+                                    Documentation = "Search by performer reference (who will perform the test). Exact match."
+                                }
+                            },
+
+                            Versioning = CapabilityStatement.ResourceVersionPolicy.Versioned,
+                            ReadHistory = false,
+                            UpdateCreate = false,
+                            ConditionalCreate = false,
+                            ConditionalRead = CapabilityStatement.ConditionalReadStatus.NotSupported,
+                            ConditionalUpdate = false,
+                            ConditionalDelete = CapabilityStatement.ConditionalDeleteStatus.NotSupported
                         }
                     }
                 }

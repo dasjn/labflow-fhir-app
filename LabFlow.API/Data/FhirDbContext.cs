@@ -28,6 +28,11 @@ public class FhirDbContext : DbContext
     /// </summary>
     public DbSet<DiagnosticReportEntity> DiagnosticReports { get; set; } = null!;
 
+    /// <summary>
+    /// ServiceRequest resources table (laboratory orders)
+    /// </summary>
+    public DbSet<ServiceRequestEntity> ServiceRequests { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -268,6 +273,115 @@ public class FhirDbContext : DbContext
 
             entity.Property(e => e.Conclusion)
                 .HasMaxLength(2000);
+
+            entity.Property(e => e.CreatedAt)
+                .IsRequired();
+
+            entity.Property(e => e.LastUpdated)
+                .IsRequired();
+
+            entity.Property(e => e.VersionId)
+                .IsRequired();
+
+            entity.Property(e => e.IsDeleted)
+                .IsRequired()
+                .HasDefaultValue(false);
+        });
+
+        // Configure ServiceRequest entity
+        modelBuilder.Entity<ServiceRequestEntity>(entity =>
+        {
+            entity.ToTable("ServiceRequests");
+
+            // Primary key
+            entity.HasKey(e => e.Id);
+
+            // Indexes for FHIR search performance
+
+            // Index for searching by patient reference (most common for lab orders)
+            entity.HasIndex(e => e.PatientId)
+                .HasDatabaseName("IX_ServiceRequests_PatientId");
+
+            // Index for searching by service code (LOINC)
+            entity.HasIndex(e => e.Code)
+                .HasDatabaseName("IX_ServiceRequests_Code");
+
+            // Index for searching by status
+            entity.HasIndex(e => e.Status)
+                .HasDatabaseName("IX_ServiceRequests_Status");
+
+            // Index for searching by intent
+            entity.HasIndex(e => e.Intent)
+                .HasDatabaseName("IX_ServiceRequests_Intent");
+
+            // Index for searching by category
+            entity.HasIndex(e => e.Category)
+                .HasDatabaseName("IX_ServiceRequests_Category");
+
+            // Index for searching by authored date
+            entity.HasIndex(e => e.AuthoredOn)
+                .HasDatabaseName("IX_ServiceRequests_AuthoredOn");
+
+            // Index for searching by requester
+            entity.HasIndex(e => e.RequesterId)
+                .HasDatabaseName("IX_ServiceRequests_RequesterId");
+
+            // Index for searching by performer
+            entity.HasIndex(e => e.PerformerId)
+                .HasDatabaseName("IX_ServiceRequests_PerformerId");
+
+            // Index for searching by occurrence date
+            entity.HasIndex(e => e.OccurrenceDateTime)
+                .HasDatabaseName("IX_ServiceRequests_OccurrenceDateTime");
+
+            // Index for _lastUpdated FHIR search parameter
+            entity.HasIndex(e => e.LastUpdated)
+                .HasDatabaseName("IX_ServiceRequests_LastUpdated");
+
+            // Index for filtering out soft-deleted resources
+            entity.HasIndex(e => e.IsDeleted)
+                .HasDatabaseName("IX_ServiceRequests_IsDeleted");
+
+            // Compound index for patient + authored date queries (common pattern: "recent orders for patient")
+            entity.HasIndex(e => new { e.PatientId, e.AuthoredOn })
+                .HasDatabaseName("IX_ServiceRequests_PatientId_AuthoredOn");
+
+            // Column configurations
+            entity.Property(e => e.Id)
+                .HasMaxLength(50)
+                .IsRequired();
+
+            var jsonColumnType = Database.IsNpgsql() ? "jsonb" : "TEXT";
+            entity.Property(e => e.FhirJson)
+                .HasColumnType(jsonColumnType)
+                .IsRequired();
+
+            entity.Property(e => e.PatientId)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.Code)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.CodeDisplay)
+                .HasMaxLength(200);
+
+            entity.Property(e => e.Status)
+                .HasMaxLength(20);
+
+            entity.Property(e => e.Intent)
+                .HasMaxLength(20);
+
+            entity.Property(e => e.Category)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.Priority)
+                .HasMaxLength(20);
+
+            entity.Property(e => e.RequesterId)
+                .HasMaxLength(50);
+
+            entity.Property(e => e.PerformerId)
+                .HasMaxLength(50);
 
             entity.Property(e => e.CreatedAt)
                 .IsRequired();
