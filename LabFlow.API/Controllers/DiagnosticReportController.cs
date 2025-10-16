@@ -83,6 +83,8 @@ public class DiagnosticReportController : ControllerBase
     /// <param name="date">Search by effective date (format: YYYY-MM-DD)</param>
     /// <param name="issued">Search by issued date (format: YYYY-MM-DD)</param>
     /// <param name="status">Search by status (registered, partial, preliminary, final, etc.)</param>
+    /// <param name="_count">Number of results per page (default: 20, max: 100)</param>
+    /// <param name="_offset">Number of results to skip for pagination (default: 0)</param>
     /// <returns>Bundle with search results</returns>
     [HttpGet]
     [ProducesResponseType(typeof(Bundle), StatusCodes.Status200OK)]
@@ -93,11 +95,33 @@ public class DiagnosticReportController : ControllerBase
         [FromQuery] string? category,
         [FromQuery] string? date,
         [FromQuery] string? issued,
-        [FromQuery] string? status)
+        [FromQuery] string? status,
+        [FromQuery(Name = "_count")] int? _count,
+        [FromQuery(Name = "_offset")] int? _offset)
     {
         _logger.LogInformation(
-            "GET DiagnosticReport - Search with patient={Patient}, code={Code}, category={Category}, date={Date}, issued={Issued}, status={Status}",
-            patient, code, category, date, issued, status);
+            "GET DiagnosticReport - Search with patient={Patient}, code={Code}, category={Category}, date={Date}, issued={Issued}, status={Status}, _count={Count}, _offset={Offset}",
+            patient, code, category, date, issued, status, _count, _offset);
+
+        // Validate pagination parameters
+        var count = _count ?? 20; // Default: 20 results per page
+        var offset = _offset ?? 0; // Default: start from beginning
+
+        if (count < 1 || count > 100)
+        {
+            return BadRequest(CreateOperationOutcome(
+                "_count parameter must be between 1 and 100",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        if (offset < 0)
+        {
+            return BadRequest(CreateOperationOutcome(
+                "_offset parameter must be non-negative",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
 
         var query = _context.DiagnosticReports.Where(d => !d.IsDeleted).AsQueryable();
 
@@ -162,15 +186,24 @@ public class DiagnosticReportController : ControllerBase
             query = query.Where(d => d.Status == statusLower);
         }
 
-        var reportEntities = await query.ToListAsync();
+        // Get total count before pagination
+        var totalCount = await query.CountAsync();
 
-        _logger.LogInformation("Found {Count} diagnostic reports matching search criteria", reportEntities.Count);
+        // Apply pagination
+        var reportEntities = await query
+            .OrderBy(d => d.LastUpdated)
+            .Skip(offset)
+            .Take(count)
+            .ToListAsync();
+
+        _logger.LogInformation("Found {TotalCount} diagnostic reports matching search criteria (returning {Count} with offset {Offset})",
+            totalCount, reportEntities.Count, offset);
 
         // Build FHIR Bundle
         var bundle = new Bundle
         {
             Type = Bundle.BundleType.Searchset,
-            Total = reportEntities.Count,
+            Total = totalCount,
             Entry = new List<Bundle.EntryComponent>()
         };
 
@@ -192,6 +225,66 @@ public class DiagnosticReportController : ControllerBase
                 {
                     Mode = Bundle.SearchEntryMode.Match
                 }
+            });
+        }
+
+        // Add pagination links
+        var baseUrl = $"{Request.Scheme}://{Request.Host}/DiagnosticReport";
+        var queryParams = new List<string>();
+
+        if (!string.IsNullOrEmpty(patient))
+            queryParams.Add($"patient={Uri.EscapeDataString(patient)}");
+        if (!string.IsNullOrEmpty(code))
+            queryParams.Add($"code={Uri.EscapeDataString(code)}");
+        if (!string.IsNullOrEmpty(category))
+            queryParams.Add($"category={Uri.EscapeDataString(category)}");
+        if (!string.IsNullOrEmpty(date))
+            queryParams.Add($"date={Uri.EscapeDataString(date)}");
+        if (!string.IsNullOrEmpty(issued))
+            queryParams.Add($"issued={Uri.EscapeDataString(issued)}");
+        if (!string.IsNullOrEmpty(status))
+            queryParams.Add($"status={Uri.EscapeDataString(status)}");
+
+        // Self link
+        var selfParams = new List<string>(queryParams)
+        {
+            $"_count={count}",
+            $"_offset={offset}"
+        };
+        bundle.Link.Add(new Bundle.LinkComponent
+        {
+            Relation = "self",
+            Url = $"{baseUrl}?{string.Join("&", selfParams)}"
+        });
+
+        // Next link (if there are more results)
+        if (offset + count < totalCount)
+        {
+            var nextParams = new List<string>(queryParams)
+            {
+                $"_count={count}",
+                $"_offset={offset + count}"
+            };
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "next",
+                Url = $"{baseUrl}?{string.Join("&", nextParams)}"
+            });
+        }
+
+        // Previous link (if not on first page)
+        if (offset > 0)
+        {
+            var prevOffset = Math.Max(0, offset - count);
+            var prevParams = new List<string>(queryParams)
+            {
+                $"_count={count}",
+                $"_offset={prevOffset}"
+            };
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "previous",
+                Url = $"{baseUrl}?{string.Join("&", prevParams)}"
             });
         }
 

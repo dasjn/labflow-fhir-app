@@ -519,7 +519,7 @@ public class DiagnosticReportControllerTests : IDisposable
         await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patient2Id, loincCode: "58410-2"));
 
         // Act
-        var result = await _controller.SearchDiagnosticReports(patient: patient1Id, null, null, null, null, null);
+        var result = await _controller.SearchDiagnosticReports(patient: patient1Id, null, null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -544,7 +544,7 @@ public class DiagnosticReportControllerTests : IDisposable
         await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId, loincCode: "58410-2")); // CBC
 
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, code: "58410-2", null, null, null, null);
+        var result = await _controller.SearchDiagnosticReports(null, code: "58410-2", null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -565,7 +565,7 @@ public class DiagnosticReportControllerTests : IDisposable
         await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId, category: "LAB"));
 
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, null, category: "LAB", null, null, null);
+        var result = await _controller.SearchDiagnosticReports(null, null, category: "LAB", null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -587,7 +587,7 @@ public class DiagnosticReportControllerTests : IDisposable
         await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId, effectiveDateTime: date1));
 
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, null, null, date: "2025-10-13", null, null);
+        var result = await _controller.SearchDiagnosticReports(null, null, null, date: "2025-10-13", null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -609,7 +609,7 @@ public class DiagnosticReportControllerTests : IDisposable
         await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId, issued: issued1));
 
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, null, null, null, issued: "2025-10-13", null);
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, issued: "2025-10-13", null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -628,7 +628,7 @@ public class DiagnosticReportControllerTests : IDisposable
         await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId, status: "final"));
 
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, null, null, null, null, status: "final");
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, null, status: "final", null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -653,7 +653,9 @@ public class DiagnosticReportControllerTests : IDisposable
             null,
             null,
             null,
-            status: "final");
+            status: "final",
+            null,
+            null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -673,7 +675,7 @@ public class DiagnosticReportControllerTests : IDisposable
         await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId, loincCode: "58410-2"));
 
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, code: "9999-9", null, null, null, null);
+        var result = await _controller.SearchDiagnosticReports(null, code: "9999-9", null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -687,7 +689,7 @@ public class DiagnosticReportControllerTests : IDisposable
     public async Task SearchDiagnosticReports_InvalidDate_ReturnsBadRequest()
     {
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, null, null, date: "invalid-date", null, null);
+        var result = await _controller.SearchDiagnosticReports(null, null, null, date: "invalid-date", null, null, null, null);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
@@ -700,7 +702,7 @@ public class DiagnosticReportControllerTests : IDisposable
     public async Task SearchDiagnosticReports_InvalidIssued_ReturnsBadRequest()
     {
         // Act
-        var result = await _controller.SearchDiagnosticReports(null, null, null, null, issued: "invalid-date", null);
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, issued: "invalid-date", null, null, null);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
@@ -842,6 +844,150 @@ public class DiagnosticReportControllerTests : IDisposable
         outcome!.Issue.Should().HaveCount(1);
         outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
         outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
+
+    #region Pagination Tests
+
+    [Fact]
+    public async Task SearchDiagnosticReports_WithDefaultPagination_Returns20Results()
+    {
+        // Arrange - Seed 30 diagnostic reports
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 30; i++)
+        {
+            await SeedDiagnosticReport(CreateTestDiagnosticReport(
+                patientId: patientId,
+                loincCode: $"PANEL-{i:D3}"
+            ));
+            await Task.Delay(10);
+        }
+
+        // Act - No pagination parameters
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, null, null, null, null);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(30);
+        bundle.Entry.Should().HaveCount(20); // Default page size
+        bundle.Link.Should().Contain(l => l.Relation == "self");
+        bundle.Link.Should().Contain(l => l.Relation == "next");
+        bundle.Link.Should().NotContain(l => l.Relation == "previous");
+    }
+
+    [Fact]
+    public async Task SearchDiagnosticReports_WithCustomCount_ReturnsCorrectPageSize()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 15; i++)
+        {
+            await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId));
+        }
+
+        // Act - Request 5 results per page
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, null, null, _count: 5, _offset: null);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(15);
+        bundle.Entry.Should().HaveCount(5);
+        bundle.Link.Should().Contain(l => l.Relation == "next");
+    }
+
+    [Fact]
+    public async Task SearchDiagnosticReports_WithOffset_ReturnsCorrectPage()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 10; i++)
+        {
+            await SeedDiagnosticReport(CreateTestDiagnosticReport(patientId: patientId));
+            await Task.Delay(10);
+        }
+
+        // Act - Request second page
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, null, null, _count: 5, _offset: 5);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(10);
+        bundle.Entry.Should().HaveCount(5);
+        bundle.Link.Should().Contain(l => l.Relation == "previous");
+        bundle.Link.Should().NotContain(l => l.Relation == "next");
+    }
+
+    [Fact]
+    public async Task SearchDiagnosticReports_CountTooLarge_ReturnsBadRequest()
+    {
+        // Act
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, null, null, _count: 101, _offset: null);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var outcome = ((BadRequestObjectResult)result).Value as OperationOutcome;
+        outcome!.Issue[0].Diagnostics.Should().Contain("_count parameter must be between 1 and 100");
+    }
+
+    [Fact]
+    public async Task SearchDiagnosticReports_NegativeOffset_ReturnsBadRequest()
+    {
+        // Act
+        var result = await _controller.SearchDiagnosticReports(null, null, null, null, null, null, _count: null, _offset: -1);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var outcome = ((BadRequestObjectResult)result).Value as OperationOutcome;
+        outcome!.Issue[0].Diagnostics.Should().Contain("_offset parameter must be non-negative");
+    }
+
+    [Fact]
+    public async Task SearchDiagnosticReports_PaginationWithFilters_PreservesQueryParams()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 25; i++)
+        {
+            await SeedDiagnosticReport(CreateTestDiagnosticReport(
+                patientId: patientId,
+                loincCode: "58410-2", // CBC panel
+                status: "final"
+            ));
+        }
+
+        // Act
+        var result = await _controller.SearchDiagnosticReports(
+            patient: patientId,
+            code: "58410-2",
+            category: null,
+            date: null,
+            issued: null,
+            status: "final",
+            _count: 10,
+            _offset: 0);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(25);
+        bundle.Entry.Should().HaveCount(10);
+
+        // Verify pagination links preserve query parameters
+        var nextLink = bundle.Link.FirstOrDefault(l => l.Relation == "next");
+        nextLink.Should().NotBeNull();
+        nextLink!.Url.Should().Contain($"patient={patientId}");
+        nextLink.Url.Should().Contain("code=58410-2");
+        nextLink.Url.Should().Contain("status=final");
+        nextLink.Url.Should().Contain("_count=10");
+        nextLink.Url.Should().Contain("_offset=10");
     }
 
     #endregion

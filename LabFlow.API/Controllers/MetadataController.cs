@@ -118,7 +118,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                         {
                             Type = "Patient",
                             Profile = "http://hl7.org/fhir/StructureDefinition/Patient",
-                            Documentation = "Patient demographics and identification",
+                            Documentation = "Patient demographics and identification. Full CRUD operations supported.",
 
                             // Supported interactions
                             Interaction = new List<CapabilityStatement.ResourceInteractionComponent>
@@ -135,8 +135,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                 },
                                 new CapabilityStatement.ResourceInteractionComponent
                                 {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Update,
+                                    Documentation = "Update existing Patient resource"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Delete,
+                                    Documentation = "Delete Patient resource (soft delete - preserves audit trail)"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
                                     Code = CapabilityStatement.TypeRestfulInteraction.SearchType,
-                                    Documentation = "Search for Patient resources"
+                                    Documentation = "Search for Patient resources with pagination support"
                                 }
                             },
 
@@ -166,6 +176,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                     Name = "gender",
                                     Type = SearchParamType.Token,
                                     Documentation = "Search by gender. Values: male, female, other, unknown. Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_count",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results per page (default: 20, max: 100)"
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_offset",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results to skip for pagination (default: 0)"
                                 }
                             },
 
@@ -183,7 +205,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                         {
                             Type = "Observation",
                             Profile = "http://hl7.org/fhir/StructureDefinition/Observation",
-                            Documentation = "Laboratory test results and measurements",
+                            Documentation = "Laboratory test results and measurements. Full CRUD operations supported.",
 
                             // Supported interactions
                             Interaction = new List<CapabilityStatement.ResourceInteractionComponent>
@@ -200,8 +222,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                 },
                                 new CapabilityStatement.ResourceInteractionComponent
                                 {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Update,
+                                    Documentation = "Update existing Observation resource"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Delete,
+                                    Documentation = "Delete Observation resource (soft delete - preserves audit trail)"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
                                     Code = CapabilityStatement.TypeRestfulInteraction.SearchType,
-                                    Documentation = "Search for Observation resources"
+                                    Documentation = "Search for Observation resources with pagination support"
                                 }
                             },
 
@@ -237,6 +269,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                     Name = "status",
                                     Type = SearchParamType.Token,
                                     Documentation = "Search by status (final, preliminary, etc.). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_count",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results per page (default: 20, max: 100)"
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_offset",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results to skip for pagination (default: 0)"
                                 }
                             },
 
@@ -254,7 +298,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                         {
                             Type = "DiagnosticReport",
                             Profile = "http://hl7.org/fhir/StructureDefinition/DiagnosticReport",
-                            Documentation = "Grouped laboratory reports with multiple test results",
+                            Documentation = "Grouped laboratory reports with multiple test results. Full CRUD operations supported.",
 
                             // Supported interactions
                             Interaction = new List<CapabilityStatement.ResourceInteractionComponent>
@@ -271,8 +315,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                 },
                                 new CapabilityStatement.ResourceInteractionComponent
                                 {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Update,
+                                    Documentation = "Update existing DiagnosticReport resource"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Delete,
+                                    Documentation = "Delete DiagnosticReport resource (soft delete - preserves audit trail)"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
                                     Code = CapabilityStatement.TypeRestfulInteraction.SearchType,
-                                    Documentation = "Search for DiagnosticReport resources"
+                                    Documentation = "Search for DiagnosticReport resources with pagination support"
                                 }
                             },
 
@@ -314,6 +368,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                     Name = "status",
                                     Type = SearchParamType.Token,
                                     Documentation = "Search by status (registered, partial, preliminary, final, etc.). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_count",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results per page (default: 20, max: 100)"
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_offset",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results to skip for pagination (default: 0)"
                                 }
                             },
 
@@ -331,7 +397,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                         {
                             Type = "ServiceRequest",
                             Profile = "http://hl7.org/fhir/StructureDefinition/ServiceRequest",
-                            Documentation = "Laboratory test orders and service requests",
+                            Documentation = "Laboratory test orders and service requests. Full CRUD operations supported.",
 
                             // Supported interactions
                             Interaction = new List<CapabilityStatement.ResourceInteractionComponent>
@@ -348,8 +414,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                 },
                                 new CapabilityStatement.ResourceInteractionComponent
                                 {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Update,
+                                    Documentation = "Update existing ServiceRequest resource"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
+                                    Code = CapabilityStatement.TypeRestfulInteraction.Delete,
+                                    Documentation = "Delete ServiceRequest resource (soft delete - preserves audit trail)"
+                                },
+                                new CapabilityStatement.ResourceInteractionComponent
+                                {
                                     Code = CapabilityStatement.TypeRestfulInteraction.SearchType,
-                                    Documentation = "Search for ServiceRequest resources"
+                                    Documentation = "Search for ServiceRequest resources with pagination support"
                                 }
                             },
 
@@ -403,6 +479,18 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
                                     Name = "performer",
                                     Type = SearchParamType.Reference,
                                     Documentation = "Search by performer reference (who will perform the test). Exact match."
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_count",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results per page (default: 20, max: 100)"
+                                },
+                                new CapabilityStatement.SearchParamComponent
+                                {
+                                    Name = "_offset",
+                                    Type = SearchParamType.Number,
+                                    Documentation = "Number of results to skip for pagination (default: 0)"
                                 }
                             },
 

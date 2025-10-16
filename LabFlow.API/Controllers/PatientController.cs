@@ -84,6 +84,8 @@ public class PatientController : ControllerBase
     /// <param name="identifier">Search by identifier (exact match)</param>
     /// <param name="birthdate">Search by birth date (exact match, format: YYYY-MM-DD)</param>
     /// <param name="gender">Search by gender (male, female, other, unknown)</param>
+    /// <param name="_count">Number of results per page (default: 20, max: 100)</param>
+    /// <param name="_offset">Number of results to skip for pagination (default: 0)</param>
     /// <returns>Bundle with search results</returns>
     [HttpGet]
     [ProducesResponseType(typeof(Bundle), StatusCodes.Status200OK)]
@@ -92,10 +94,32 @@ public class PatientController : ControllerBase
         [FromQuery] string? name,
         [FromQuery] string? identifier,
         [FromQuery] string? birthdate,
-        [FromQuery] string? gender)
+        [FromQuery] string? gender,
+        [FromQuery(Name = "_count")] int? _count,
+        [FromQuery(Name = "_offset")] int? _offset)
     {
-        _logger.LogInformation("GET Patient - Search with name={Name}, identifier={Identifier}, birthdate={Birthdate}, gender={Gender}",
-            name, identifier, birthdate, gender);
+        _logger.LogInformation("GET Patient - Search with name={Name}, identifier={Identifier}, birthdate={Birthdate}, gender={Gender}, _count={Count}, _offset={Offset}",
+            name, identifier, birthdate, gender, _count, _offset);
+
+        // Validate pagination parameters
+        var count = _count ?? 20; // Default: 20 results per page
+        var offset = _offset ?? 0; // Default: start from beginning
+
+        if (count < 1 || count > 100)
+        {
+            return BadRequest(CreateOperationOutcome(
+                "_count parameter must be between 1 and 100",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        if (offset < 0)
+        {
+            return BadRequest(CreateOperationOutcome(
+                "_offset parameter must be non-negative",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
 
         // Start with base query (exclude soft-deleted)
         var query = _context.Patients.Where(p => !p.IsDeleted).AsQueryable();
@@ -150,18 +174,71 @@ public class PatientController : ControllerBase
             query = query.Where(p => p.Gender == genderLower);
         }
 
-        // Execute query
-        var patientEntities = await query.ToListAsync();
+        // Get total count before pagination
+        var totalCount = await query.CountAsync();
 
-        _logger.LogInformation("Found {Count} patients matching search criteria", patientEntities.Count);
+        // Apply pagination
+        var patientEntities = await query
+            .OrderBy(p => p.LastUpdated) // Consistent ordering for pagination
+            .Skip(offset)
+            .Take(count)
+            .ToListAsync();
+
+        _logger.LogInformation("Found {TotalCount} patients matching search criteria, returning {Count} results (offset: {Offset})",
+            totalCount, patientEntities.Count, offset);
 
         // Build FHIR Bundle with search results
         var bundle = new Bundle
         {
             Type = Bundle.BundleType.Searchset,
-            Total = patientEntities.Count,
+            Total = totalCount,
             Entry = new List<Bundle.EntryComponent>()
         };
+
+        // Add pagination links
+        var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.Path}";
+        var queryParams = new List<string>();
+        if (!string.IsNullOrEmpty(name)) queryParams.Add($"name={Uri.EscapeDataString(name)}");
+        if (!string.IsNullOrEmpty(identifier)) queryParams.Add($"identifier={Uri.EscapeDataString(identifier)}");
+        if (!string.IsNullOrEmpty(birthdate)) queryParams.Add($"birthdate={Uri.EscapeDataString(birthdate)}");
+        if (!string.IsNullOrEmpty(gender)) queryParams.Add($"gender={Uri.EscapeDataString(gender)}");
+
+        // Self link
+        var selfParams = new List<string>(queryParams);
+        selfParams.Add($"_count={count}");
+        selfParams.Add($"_offset={offset}");
+        bundle.Link.Add(new Bundle.LinkComponent
+        {
+            Relation = "self",
+            Url = $"{baseUrl}?{string.Join("&", selfParams)}"
+        });
+
+        // Next link (if there are more results)
+        if (offset + count < totalCount)
+        {
+            var nextParams = new List<string>(queryParams);
+            nextParams.Add($"_count={count}");
+            nextParams.Add($"_offset={offset + count}");
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "next",
+                Url = $"{baseUrl}?{string.Join("&", nextParams)}"
+            });
+        }
+
+        // Previous link (if not on first page)
+        if (offset > 0)
+        {
+            var prevOffset = Math.Max(0, offset - count);
+            var prevParams = new List<string>(queryParams);
+            prevParams.Add($"_count={count}");
+            prevParams.Add($"_offset={prevOffset}");
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "previous",
+                Url = $"{baseUrl}?{string.Join("&", prevParams)}"
+            });
+        }
 
         foreach (var entity in patientEntities)
         {

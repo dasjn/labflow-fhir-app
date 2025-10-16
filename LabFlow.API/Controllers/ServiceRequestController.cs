@@ -85,6 +85,8 @@ public class ServiceRequestController : ControllerBase
     /// <param name="authored">Search by authored date (format: YYYY-MM-DD)</param>
     /// <param name="requester">Search by requester reference</param>
     /// <param name="performer">Search by performer reference</param>
+    /// <param name="_count">Number of results per page (default: 20, max: 100)</param>
+    /// <param name="_offset">Pagination offset (default: 0)</param>
     /// <returns>Bundle with search results</returns>
     [HttpGet]
     [ProducesResponseType(typeof(Bundle), StatusCodes.Status200OK)]
@@ -97,11 +99,33 @@ public class ServiceRequestController : ControllerBase
         [FromQuery] string? category,
         [FromQuery] string? authored,
         [FromQuery] string? requester,
-        [FromQuery] string? performer)
+        [FromQuery] string? performer,
+        [FromQuery(Name = "_count")] int? _count,
+        [FromQuery(Name = "_offset")] int? _offset)
     {
         _logger.LogInformation(
-            "GET ServiceRequest - Search with patient={Patient}, code={Code}, status={Status}, intent={Intent}, category={Category}, authored={Authored}, requester={Requester}, performer={Performer}",
-            patient, code, status, intent, category, authored, requester, performer);
+            "GET ServiceRequest - Search with patient={Patient}, code={Code}, status={Status}, intent={Intent}, category={Category}, authored={Authored}, requester={Requester}, performer={Performer}, _count={Count}, _offset={Offset}",
+            patient, code, status, intent, category, authored, requester, performer, _count, _offset);
+
+        // Validate pagination parameters
+        var count = _count ?? 20; // Default: 20 results per page
+        var offset = _offset ?? 0; // Default: start from beginning
+
+        if (count < 1 || count > 100)
+        {
+            return BadRequest(CreateOperationOutcome(
+                "_count parameter must be between 1 and 100",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        if (offset < 0)
+        {
+            return BadRequest(CreateOperationOutcome(
+                "_offset parameter must be non-negative",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
 
         var query = _context.ServiceRequests.Where(sr => !sr.IsDeleted).AsQueryable();
 
@@ -169,15 +193,24 @@ public class ServiceRequestController : ControllerBase
             query = query.Where(sr => sr.PerformerId == performer);
         }
 
-        var serviceRequestEntities = await query.ToListAsync();
+        // Get total count before pagination
+        var totalCount = await query.CountAsync();
 
-        _logger.LogInformation("Found {Count} service requests matching search criteria", serviceRequestEntities.Count);
+        // Apply pagination
+        var serviceRequestEntities = await query
+            .OrderBy(sr => sr.LastUpdated)
+            .Skip(offset)
+            .Take(count)
+            .ToListAsync();
+
+        _logger.LogInformation("Found {TotalCount} service requests matching search criteria (returning {Count} with offset {Offset})",
+            totalCount, serviceRequestEntities.Count, offset);
 
         // Build FHIR Bundle
         var bundle = new Bundle
         {
             Type = Bundle.BundleType.Searchset,
-            Total = serviceRequestEntities.Count,
+            Total = totalCount,
             Entry = new List<Bundle.EntryComponent>()
         };
 
@@ -199,6 +232,70 @@ public class ServiceRequestController : ControllerBase
                 {
                     Mode = Bundle.SearchEntryMode.Match
                 }
+            });
+        }
+
+        // Add pagination links
+        var baseUrl = $"{Request.Scheme}://{Request.Host}/ServiceRequest";
+        var queryParams = new List<string>();
+
+        if (!string.IsNullOrEmpty(patient))
+            queryParams.Add($"patient={Uri.EscapeDataString(patient)}");
+        if (!string.IsNullOrEmpty(code))
+            queryParams.Add($"code={Uri.EscapeDataString(code)}");
+        if (!string.IsNullOrEmpty(status))
+            queryParams.Add($"status={Uri.EscapeDataString(status)}");
+        if (!string.IsNullOrEmpty(intent))
+            queryParams.Add($"intent={Uri.EscapeDataString(intent)}");
+        if (!string.IsNullOrEmpty(category))
+            queryParams.Add($"category={Uri.EscapeDataString(category)}");
+        if (!string.IsNullOrEmpty(authored))
+            queryParams.Add($"authored={Uri.EscapeDataString(authored)}");
+        if (!string.IsNullOrEmpty(requester))
+            queryParams.Add($"requester={Uri.EscapeDataString(requester)}");
+        if (!string.IsNullOrEmpty(performer))
+            queryParams.Add($"performer={Uri.EscapeDataString(performer)}");
+
+        // Self link
+        var selfParams = new List<string>(queryParams)
+        {
+            $"_count={count}",
+            $"_offset={offset}"
+        };
+        bundle.Link.Add(new Bundle.LinkComponent
+        {
+            Relation = "self",
+            Url = $"{baseUrl}?{string.Join("&", selfParams)}"
+        });
+
+        // Next link (if there are more results)
+        if (offset + count < totalCount)
+        {
+            var nextParams = new List<string>(queryParams)
+            {
+                $"_count={count}",
+                $"_offset={offset + count}"
+            };
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "next",
+                Url = $"{baseUrl}?{string.Join("&", nextParams)}"
+            });
+        }
+
+        // Previous link (if not on first page)
+        if (offset > 0)
+        {
+            var prevOffset = Math.Max(0, offset - count);
+            var prevParams = new List<string>(queryParams)
+            {
+                $"_count={count}",
+                $"_offset={prevOffset}"
+            };
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "previous",
+                Url = $"{baseUrl}?{string.Join("&", prevParams)}"
             });
         }
 

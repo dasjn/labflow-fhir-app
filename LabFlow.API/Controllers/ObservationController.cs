@@ -82,6 +82,8 @@ public class ObservationController : ControllerBase
     /// <param name="category">Search by category (e.g., laboratory, vital-signs)</param>
     /// <param name="date">Search by observation date (format: YYYY-MM-DD)</param>
     /// <param name="status">Search by status (final, preliminary, etc.)</param>
+    /// <param name="_count">Number of results per page (default: 20, max: 100)</param>
+    /// <param name="_offset">Number of results to skip (default: 0)</param>
     /// <returns>Bundle with search results</returns>
     [HttpGet]
     [ProducesResponseType(typeof(Bundle), StatusCodes.Status200OK)]
@@ -91,11 +93,33 @@ public class ObservationController : ControllerBase
         [FromQuery] string? code,
         [FromQuery] string? category,
         [FromQuery] string? date,
-        [FromQuery] string? status)
+        [FromQuery] string? status,
+        [FromQuery(Name = "_count")] int? _count,
+        [FromQuery(Name = "_offset")] int? _offset)
     {
         _logger.LogInformation(
             "GET Observation - Search with patient={Patient}, code={Code}, category={Category}, date={Date}, status={Status}",
             patient, code, category, date, status);
+
+        // Validate pagination parameters
+        if (_count.HasValue && (_count.Value < 1 || _count.Value > 100))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Parameter _count must be between 1 and 100",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        if (_offset.HasValue && _offset.Value < 0)
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Parameter _offset must be non-negative",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        var count = _count ?? 20;
+        var offset = _offset ?? 0;
 
         var query = _context.Observations.Where(o => !o.IsDeleted).AsQueryable();
 
@@ -145,17 +169,72 @@ public class ObservationController : ControllerBase
             query = query.Where(o => o.Status == statusLower);
         }
 
-        var observationEntities = await query.ToListAsync();
+        // Get total count before pagination
+        var totalCount = await query.CountAsync();
 
-        _logger.LogInformation("Found {Count} observations matching search criteria", observationEntities.Count);
+        // Apply pagination
+        var observationEntities = await query
+            .OrderBy(o => o.LastUpdated)
+            .Skip(offset)
+            .Take(count)
+            .ToListAsync();
+
+        _logger.LogInformation("Found {TotalCount} observations matching search criteria, returning {Count} results (offset: {Offset})",
+            totalCount, observationEntities.Count, offset);
 
         // Build FHIR Bundle
         var bundle = new Bundle
         {
             Type = Bundle.BundleType.Searchset,
-            Total = observationEntities.Count,
+            Total = totalCount,
             Entry = new List<Bundle.EntryComponent>()
         };
+
+        // Add pagination links
+        var baseUrl = $"{Request.Scheme}://{Request.Host}{Request.Path}";
+        var queryParams = new List<string>();
+        if (!string.IsNullOrEmpty(patient)) queryParams.Add($"patient={Uri.EscapeDataString(patient)}");
+        if (!string.IsNullOrEmpty(code)) queryParams.Add($"code={Uri.EscapeDataString(code)}");
+        if (!string.IsNullOrEmpty(category)) queryParams.Add($"category={Uri.EscapeDataString(category)}");
+        if (!string.IsNullOrEmpty(date)) queryParams.Add($"date={Uri.EscapeDataString(date)}");
+        if (!string.IsNullOrEmpty(status)) queryParams.Add($"status={Uri.EscapeDataString(status)}");
+
+        // Self link
+        var selfParams = new List<string>(queryParams);
+        selfParams.Add($"_count={count}");
+        selfParams.Add($"_offset={offset}");
+        bundle.Link.Add(new Bundle.LinkComponent
+        {
+            Relation = "self",
+            Url = $"{baseUrl}?{string.Join("&", selfParams)}"
+        });
+
+        // Next link
+        if (offset + count < totalCount)
+        {
+            var nextParams = new List<string>(queryParams);
+            nextParams.Add($"_count={count}");
+            nextParams.Add($"_offset={offset + count}");
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "next",
+                Url = $"{baseUrl}?{string.Join("&", nextParams)}"
+            });
+        }
+
+        // Previous link
+        if (offset > 0)
+        {
+            var prevOffset = Math.Max(0, offset - count);
+            var prevParams = new List<string>(queryParams);
+            prevParams.Add($"_count={count}");
+            prevParams.Add($"_offset={prevOffset}");
+            bundle.Link.Add(new Bundle.LinkComponent
+            {
+                Relation = "previous",
+                Url = $"{baseUrl}?{string.Join("&", prevParams)}"
+            });
+        }
 
         foreach (var entity in observationEntities)
         {

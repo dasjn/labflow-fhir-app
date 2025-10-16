@@ -11,7 +11,7 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 ## 🎯 Project Status
 
 **Timeline**: Week 5 of development sprint
-**Current Phase**: Phase 5 Complete - JWT Authentication & Authorization
+**Current Phase**: Phase 5 Complete - JWT Authentication & Pagination
 **Last Updated**: 2025-10-16
 
 ---
@@ -95,8 +95,18 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 ### CI/CD & Automation
 - [x] **GitHub Actions** - Automated build & test pipeline
   - [x] Runs on every push to main
-  - [x] Executes all 106 unit tests
+  - [x] Executes all 132 unit tests
   - [x] Build status badge in README
+
+### FHIR Pagination
+- [x] **Offset-based pagination** for all search endpoints
+  - [x] `_count` parameter (default: 20, max: 100) - results per page
+  - [x] `_offset` parameter (default: 0) - number of results to skip
+  - [x] Bundle.Link navigation (self, next, previous)
+  - [x] Total count preserved in Bundle.Total
+  - [x] Query parameter preservation across pages
+  - [x] FHIR R4 compliant pagination links
+  - [x] 26 pagination-specific unit tests (all passing ✅)
 
 ---
 
@@ -417,6 +427,11 @@ GET /Patient?identifier=12345678
 GET /Patient?birthdate=1985-03-15
 GET /Patient?gender=male
 GET /Patient?name=Smith&gender=male  # Combined search
+
+# Pagination (FHIR R4 standard)
+GET /Patient?name=García&_count=10&_offset=0   # First page (10 results)
+GET /Patient?name=García&_count=10&_offset=10  # Second page
+# Bundle.Link contains self, next, previous URLs for navigation
 ```
 
 **Observation Resource (Laboratory Results):**
@@ -445,6 +460,10 @@ GET /Observation?category=laboratory          # By category
 GET /Observation?date=2025-10-13             # By observation date
 GET /Observation?status=final                 # By status
 GET /Observation?patient=123&code=2339-0      # Combined search
+
+# Pagination
+GET /Observation?patient=123&_count=20&_offset=0   # First 20 results
+GET /Observation?patient=123&_count=20&_offset=20  # Next 20 results
 ```
 
 **DiagnosticReport Resource (Grouped Lab Reports):**
@@ -482,6 +501,9 @@ GET /DiagnosticReport?date=2025-10-13         # By effective date (study perform
 GET /DiagnosticReport?issued=2025-10-13       # By issued date (report published)
 GET /DiagnosticReport?status=final            # By status
 GET /DiagnosticReport?patient=123&code=58410-2  # Combined search
+
+# Pagination
+GET /DiagnosticReport?patient=123&_count=15&_offset=0  # First 15 results
 ```
 
 **ServiceRequest Resource (Laboratory Orders):**
@@ -526,6 +548,9 @@ GET /ServiceRequest?authored=2025-10-13       # By authored date
 GET /ServiceRequest?requester=Practitioner/456  # By requester
 GET /ServiceRequest?performer=Organization/789  # By performer
 GET /ServiceRequest?patient=123&status=active   # Combined search
+
+# Pagination
+GET /ServiceRequest?patient=123&_count=25&_offset=0  # First 25 results
 ```
 
 ### Run the API
@@ -563,31 +588,35 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
 ```
 
 **Test Coverage:**
-- **106 focused unit tests** covering Patient, Observation, DiagnosticReport, ServiceRequest, and Authentication
-- **Patient** (17 tests):
+- **132 focused unit tests** covering Patient, Observation, DiagnosticReport, ServiceRequest, Authentication, and Pagination
+- **Patient** (25 tests):
   - GetPatient (2): Valid ID, Not Found scenarios
   - CreatePatient (3): Valid resource, Invalid content-type, FHIR validation
   - UpdatePatient (2): Valid update, Not Found scenarios
   - DeletePatient (2): Valid delete (soft), Not Found scenarios
   - SearchPatients (8): Individual parameters (name, identifier, birthdate, gender), combined filters, empty results, invalid inputs
-- **Observation** (20 tests):
+  - Pagination (8): Default pagination, custom count, offset, count validation, negative offset, filter preservation, empty pages
+- **Observation** (26 tests):
   - GetObservation (2): Valid ID, Not Found scenarios
   - CreateObservation (5): Valid resource, Invalid content-type, Missing status/code, Non-existent patient reference
   - UpdateObservation (2): Valid update, Not Found scenarios
   - DeleteObservation (2): Valid delete (soft), Not Found scenarios
   - SearchObservations (9): Individual parameters (patient, code, category, date, status), patient reference format handling, combined filters, empty results, invalid date
-- **DiagnosticReport** (23 tests):
+  - Pagination (6): Default pagination, custom count, offset, count validation, negative offset, filter preservation
+- **DiagnosticReport** (29 tests):
   - GetDiagnosticReport (2): Valid ID, Not Found scenarios
   - CreateDiagnosticReport (7): Valid report, Invalid content-type, Missing status/code, Non-existent patient, Non-existent observation, Invalid reference type
   - UpdateDiagnosticReport (2): Valid update, Not Found scenarios
   - DeleteDiagnosticReport (2): Valid delete (soft), Not Found scenarios
   - SearchDiagnosticReports (10): Individual parameters (patient, code, category, date, issued, status), combined filters, empty results, invalid date/issued
-- **ServiceRequest** (20 tests):
+  - Pagination (6): Default pagination, custom count, offset, count validation, negative offset, filter preservation
+- **ServiceRequest** (26 tests):
   - GetServiceRequest (2): Valid ID, Not Found scenarios
   - CreateServiceRequest (5): Valid request, Invalid content-type, Missing status/intent, Non-existent patient reference
   - UpdateServiceRequest (2): Valid update, Not Found scenarios
   - DeleteServiceRequest (2): Valid delete (soft), Not Found scenarios
   - SearchServiceRequests (10): Individual parameters (patient, code, status, intent, category, authored), patient reference format handling, combined filters, empty results, invalid authored date
+  - Pagination (6): Default pagination, custom count, offset, count validation, negative offset, filter preservation
 - **AuthService** (15 tests):
   - Password hashing (3): Hash generation, verification success/failure
   - JWT generation (4): Token structure, claims validation, expiration, signature
@@ -599,7 +628,7 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
 - **Test isolation**: Each test uses unique in-memory database
 - **Framework**: xUnit + FluentAssertions + EF Core InMemory
 
-All tests passing ✅ (106/106)
+All tests passing ✅ (132/132)
 
 ### Database Commands
 
@@ -747,10 +776,17 @@ LabFlow/
   - Comprehensive audit logging (WHO, WHAT, WHEN)
   - CapabilityStatement security documentation updated
   - Swagger UI with Bearer token support
+- [x] **FHIR Pagination** ✅
+  - Offset-based pagination with `_count` and `_offset` parameters
+  - FHIR R4 compliant Bundle.Link navigation (self, next, previous)
+  - Total count preserved in Bundle.Total
+  - Query parameter preservation across pages
+  - Default 20 results per page, max 100
+  - 26 comprehensive pagination tests
 
 ### Phase 6: Advanced Features & Testing (Next)
 - [ ] **Integration tests** (TestServer end-to-end validation OR TestContainers with PostgreSQL)
-- [ ] Advanced FHIR search (_include, _revinclude, sorting, pagination)
+- [ ] Advanced FHIR search (_include, _revinclude, _sort, _lastUpdated)
 - [ ] PostgreSQL migration (from SQLite to production-ready database)
 - [ ] Azure deployment (App Service + Azure SQL/PostgreSQL)
 

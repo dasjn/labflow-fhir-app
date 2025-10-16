@@ -259,7 +259,7 @@ public class PatientControllerTests : IDisposable
         await SeedPatient(CreateTestPatient("García", "Maria", "333"));
 
         // Act
-        var result = await _controller.SearchPatients(name: "García", null, null, null);
+        var result = await _controller.SearchPatients(name: "García", null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -282,7 +282,7 @@ public class PatientControllerTests : IDisposable
         await SeedPatient(CreateTestPatient("Smith", "John", "87654321"));
 
         // Act
-        var result = await _controller.SearchPatients(null, identifier: "12345678", null, null);
+        var result = await _controller.SearchPatients(null, identifier: "12345678", null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -300,7 +300,7 @@ public class PatientControllerTests : IDisposable
         await SeedPatient(CreateTestPatient("Smith", "John", birthDate: "1990-05-20"));
 
         // Act
-        var result = await _controller.SearchPatients(null, null, birthdate: "1985-03-15", null);
+        var result = await _controller.SearchPatients(null, null, birthdate: "1985-03-15", null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -319,7 +319,7 @@ public class PatientControllerTests : IDisposable
         await SeedPatient(CreateTestPatient("Doe", "John", gender: AdministrativeGender.Male));
 
         // Act
-        var result = await _controller.SearchPatients(null, null, null, gender: "male");
+        var result = await _controller.SearchPatients(null, null, null, gender: "male", null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -339,7 +339,7 @@ public class PatientControllerTests : IDisposable
         await SeedPatient(CreateTestPatient("Smith", "John", gender: AdministrativeGender.Male));
 
         // Act
-        var result = await _controller.SearchPatients(name: "García", null, null, gender: "male");
+        var result = await _controller.SearchPatients(name: "García", null, null, gender: "male", null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -358,7 +358,7 @@ public class PatientControllerTests : IDisposable
         await SeedPatient(CreateTestPatient("García", "Juan"));
 
         // Act
-        var result = await _controller.SearchPatients(name: "NonExistent", null, null, null);
+        var result = await _controller.SearchPatients(name: "NonExistent", null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -372,7 +372,7 @@ public class PatientControllerTests : IDisposable
     public async Task SearchPatients_InvalidBirthdate_ReturnsBadRequest()
     {
         // Act
-        var result = await _controller.SearchPatients(null, null, birthdate: "invalid-date", null);
+        var result = await _controller.SearchPatients(null, null, birthdate: "invalid-date", null, null, null);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
@@ -385,7 +385,7 @@ public class PatientControllerTests : IDisposable
     public async Task SearchPatients_InvalidGender_ReturnsBadRequest()
     {
         // Act
-        var result = await _controller.SearchPatients(null, null, null, gender: "invalid-gender");
+        var result = await _controller.SearchPatients(null, null, null, gender: "invalid-gender", null, null);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
@@ -511,6 +511,178 @@ public class PatientControllerTests : IDisposable
         outcome!.Issue.Should().HaveCount(1);
         outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
         outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
+
+    #region Pagination Tests
+
+    [Fact]
+    public async Task SearchPatients_WithDefaultPagination_Returns20Results()
+    {
+        // Arrange - Seed 30 patients
+        for (int i = 1; i <= 30; i++)
+        {
+            await SeedPatient(CreateTestPatient($"Family{i:D2}", $"Given{i:D2}", $"ID{i:D3}"));
+            await Task.Delay(10); // Ensure different LastUpdated timestamps
+        }
+
+        // Act - No pagination parameters (should default to _count=20, _offset=0)
+        var result = await _controller.SearchPatients(null, null, null, null, null, null);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Type.Should().Be(Bundle.BundleType.Searchset);
+        bundle.Total.Should().Be(30); // Total count
+        bundle.Entry.Should().HaveCount(20); // Page size
+
+        // Verify links
+        bundle.Link.Should().Contain(l => l.Relation == "self");
+        bundle.Link.Should().Contain(l => l.Relation == "next");
+        bundle.Link.Should().NotContain(l => l.Relation == "previous"); // First page has no previous
+    }
+
+    [Fact]
+    public async Task SearchPatients_WithCustomCount_ReturnsCorrectPageSize()
+    {
+        // Arrange - Seed 15 patients
+        for (int i = 1; i <= 15; i++)
+        {
+            await SeedPatient(CreateTestPatient($"Family{i:D2}", $"Given{i:D2}"));
+        }
+
+        // Act - Request 5 results per page
+        var result = await _controller.SearchPatients(null, null, null, null, _count: 5, _offset: null);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(15);
+        bundle.Entry.Should().HaveCount(5);
+
+        // Verify links
+        bundle.Link.Should().Contain(l => l.Relation == "next");
+    }
+
+    [Fact]
+    public async Task SearchPatients_WithOffset_ReturnsCorrectPage()
+    {
+        // Arrange - Seed 10 patients with known order
+        var ids = new List<string>();
+        for (int i = 1; i <= 10; i++)
+        {
+            var patient = CreateTestPatient($"Family{i:D2}", $"Given{i:D2}");
+            ids.Add(await SeedPatient(patient));
+            await Task.Delay(10); // Ensure different LastUpdated timestamps
+        }
+
+        // Act - Request second page (offset=5, count=5)
+        var result = await _controller.SearchPatients(null, null, null, null, _count: 5, _offset: 5);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(10);
+        bundle.Entry.Should().HaveCount(5); // Last 5 results
+
+        // Verify links
+        bundle.Link.Should().Contain(l => l.Relation == "self");
+        bundle.Link.Should().Contain(l => l.Relation == "previous");
+        bundle.Link.Should().NotContain(l => l.Relation == "next"); // Last page has no next
+    }
+
+    [Fact]
+    public async Task SearchPatients_CountTooLarge_ReturnsBadRequest()
+    {
+        // Act - Request more than 100 results
+        var result = await _controller.SearchPatients(null, null, null, null, _count: 101, _offset: null);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var outcome = ((BadRequestObjectResult)result).Value as OperationOutcome;
+
+        outcome!.Issue[0].Diagnostics.Should().Contain("_count parameter must be between 1 and 100");
+    }
+
+    [Fact]
+    public async Task SearchPatients_CountZero_ReturnsBadRequest()
+    {
+        // Act
+        var result = await _controller.SearchPatients(null, null, null, null, _count: 0, _offset: null);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var outcome = ((BadRequestObjectResult)result).Value as OperationOutcome;
+
+        outcome!.Issue[0].Diagnostics.Should().Contain("_count parameter must be between 1 and 100");
+    }
+
+    [Fact]
+    public async Task SearchPatients_NegativeOffset_ReturnsBadRequest()
+    {
+        // Act
+        var result = await _controller.SearchPatients(null, null, null, null, _count: null, _offset: -1);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var outcome = ((BadRequestObjectResult)result).Value as OperationOutcome;
+
+        outcome!.Issue[0].Diagnostics.Should().Contain("_offset parameter must be non-negative");
+    }
+
+    [Fact]
+    public async Task SearchPatients_PaginationWithFilters_PreservesQueryParams()
+    {
+        // Arrange - Seed patients with García surname
+        for (int i = 1; i <= 25; i++)
+        {
+            await SeedPatient(CreateTestPatient("García", $"Given{i:D2}"));
+        }
+
+        // Act - Search by name with pagination
+        var result = await _controller.SearchPatients(name: "García", null, null, null, _count: 10, _offset: 0);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(25);
+        bundle.Entry.Should().HaveCount(10);
+
+        // Verify that pagination links preserve the 'name' parameter (URL-encoded)
+        var nextLink = bundle.Link.FirstOrDefault(l => l.Relation == "next");
+        nextLink.Should().NotBeNull();
+        nextLink!.Url.Should().Contain("name=Garc%C3%ADa"); // URL-encoded García
+        nextLink.Url.Should().Contain("_count=10");
+        nextLink.Url.Should().Contain("_offset=10");
+    }
+
+    [Fact]
+    public async Task SearchPatients_OffsetBeyondResults_ReturnsEmptyPage()
+    {
+        // Arrange - Seed only 5 patients
+        for (int i = 1; i <= 5; i++)
+        {
+            await SeedPatient(CreateTestPatient($"Family{i}", $"Given{i}"));
+        }
+
+        // Act - Request page beyond available results
+        var result = await _controller.SearchPatients(null, null, null, null, _count: 10, _offset: 10);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(5); // Total count
+        bundle.Entry.Should().BeEmpty(); // No results on this page
+
+        // Verify links
+        bundle.Link.Should().Contain(l => l.Relation == "previous");
+        bundle.Link.Should().NotContain(l => l.Relation == "next");
     }
 
     #endregion

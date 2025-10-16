@@ -404,7 +404,7 @@ public class ServiceRequestControllerTests : IDisposable
 
         // Act
         var result = await _controller.SearchServiceRequests(
-            patient: patient1Id, null, null, null, null, null, null, null);
+            patient: patient1Id, null, null, null, null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -428,7 +428,7 @@ public class ServiceRequestControllerTests : IDisposable
 
         // Act - Test with "Patient/123" format
         var result = await _controller.SearchServiceRequests(
-            patient: $"Patient/{patientId}", null, null, null, null, null, null, null);
+            patient: $"Patient/{patientId}", null, null, null, null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -449,7 +449,7 @@ public class ServiceRequestControllerTests : IDisposable
 
         // Act
         var result = await _controller.SearchServiceRequests(
-            null, code: "2339-0", null, null, null, null, null, null);
+            null, code: "2339-0", null, null, null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -471,7 +471,7 @@ public class ServiceRequestControllerTests : IDisposable
 
         // Act
         var result = await _controller.SearchServiceRequests(
-            null, null, status: "active", null, null, null, null, null);
+            null, null, status: "active", null, null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -493,7 +493,7 @@ public class ServiceRequestControllerTests : IDisposable
 
         // Act
         var result = await _controller.SearchServiceRequests(
-            null, null, null, intent: "order", null, null, null, null);
+            null, null, null, intent: "order", null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -518,7 +518,7 @@ public class ServiceRequestControllerTests : IDisposable
 
         // Act
         var result = await _controller.SearchServiceRequests(
-            null, null, null, null, null, authored: "2025-10-13", null, null);
+            null, null, null, null, null, authored: "2025-10-13", null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -542,7 +542,7 @@ public class ServiceRequestControllerTests : IDisposable
             code: "2339-0",
             status: "active",
             intent: "order",
-            null, null, null, null);
+            null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -564,7 +564,7 @@ public class ServiceRequestControllerTests : IDisposable
 
         // Act
         var result = await _controller.SearchServiceRequests(
-            null, code: "9999-9", null, null, null, null, null, null);
+            null, code: "9999-9", null, null, null, null, null, null, null, null);
 
         // Assert
         result.Should().BeOfType<OkObjectResult>();
@@ -579,7 +579,7 @@ public class ServiceRequestControllerTests : IDisposable
     {
         // Act
         var result = await _controller.SearchServiceRequests(
-            null, null, null, null, null, authored: "invalid-date", null, null);
+            null, null, null, null, null, authored: "invalid-date", null, null, null, null);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
@@ -711,6 +711,152 @@ public class ServiceRequestControllerTests : IDisposable
         outcome!.Issue.Should().HaveCount(1);
         outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
         outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
+
+    #region Pagination Tests
+
+    [Fact]
+    public async Task SearchServiceRequests_WithDefaultPagination_Returns20Results()
+    {
+        // Arrange - Seed 30 service requests
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 30; i++)
+        {
+            await SeedServiceRequest(CreateTestServiceRequest(
+                patientId: patientId,
+                loincCode: $"TEST-{i:D3}"
+            ));
+            await Task.Delay(10);
+        }
+
+        // Act - No pagination parameters
+        var result = await _controller.SearchServiceRequests(null, null, null, null, null, null, null, null, null, null);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(30);
+        bundle.Entry.Should().HaveCount(20); // Default page size
+        bundle.Link.Should().Contain(l => l.Relation == "self");
+        bundle.Link.Should().Contain(l => l.Relation == "next");
+        bundle.Link.Should().NotContain(l => l.Relation == "previous");
+    }
+
+    [Fact]
+    public async Task SearchServiceRequests_WithCustomCount_ReturnsCorrectPageSize()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 15; i++)
+        {
+            await SeedServiceRequest(CreateTestServiceRequest(patientId: patientId));
+        }
+
+        // Act - Request 5 results per page
+        var result = await _controller.SearchServiceRequests(null, null, null, null, null, null, null, null, _count: 5, _offset: null);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(15);
+        bundle.Entry.Should().HaveCount(5);
+        bundle.Link.Should().Contain(l => l.Relation == "next");
+    }
+
+    [Fact]
+    public async Task SearchServiceRequests_WithOffset_ReturnsCorrectPage()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 10; i++)
+        {
+            await SeedServiceRequest(CreateTestServiceRequest(patientId: patientId));
+            await Task.Delay(10);
+        }
+
+        // Act - Request second page
+        var result = await _controller.SearchServiceRequests(null, null, null, null, null, null, null, null, _count: 5, _offset: 5);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(10);
+        bundle.Entry.Should().HaveCount(5);
+        bundle.Link.Should().Contain(l => l.Relation == "previous");
+        bundle.Link.Should().NotContain(l => l.Relation == "next");
+    }
+
+    [Fact]
+    public async Task SearchServiceRequests_CountTooLarge_ReturnsBadRequest()
+    {
+        // Act
+        var result = await _controller.SearchServiceRequests(null, null, null, null, null, null, null, null, _count: 101, _offset: null);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var outcome = ((BadRequestObjectResult)result).Value as OperationOutcome;
+        outcome!.Issue[0].Diagnostics.Should().Contain("_count parameter must be between 1 and 100");
+    }
+
+    [Fact]
+    public async Task SearchServiceRequests_NegativeOffset_ReturnsBadRequest()
+    {
+        // Act
+        var result = await _controller.SearchServiceRequests(null, null, null, null, null, null, null, null, _count: null, _offset: -1);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+        var outcome = ((BadRequestObjectResult)result).Value as OperationOutcome;
+        outcome!.Issue[0].Diagnostics.Should().Contain("_offset parameter must be non-negative");
+    }
+
+    [Fact]
+    public async Task SearchServiceRequests_PaginationWithFilters_PreservesQueryParams()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        for (int i = 1; i <= 25; i++)
+        {
+            await SeedServiceRequest(CreateTestServiceRequest(
+                patientId: patientId,
+                loincCode: "2339-0", // Glucose test
+                status: "active"
+            ));
+        }
+
+        // Act
+        var result = await _controller.SearchServiceRequests(
+            patient: patientId,
+            code: "2339-0",
+            status: "active",
+            intent: null,
+            category: null,
+            authored: null,
+            requester: null,
+            performer: null,
+            _count: 10,
+            _offset: 0);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var bundle = ((OkObjectResult)result).Value as Bundle;
+
+        bundle!.Total.Should().Be(25);
+        bundle.Entry.Should().HaveCount(10);
+
+        // Verify pagination links preserve query parameters
+        var nextLink = bundle.Link.FirstOrDefault(l => l.Relation == "next");
+        nextLink.Should().NotBeNull();
+        nextLink!.Url.Should().Contain($"patient={patientId}");
+        nextLink.Url.Should().Contain("code=2339-0");
+        nextLink.Url.Should().Contain("status=active");
+        nextLink.Url.Should().Contain("_count=10");
+        nextLink.Url.Should().Contain("_offset=10");
     }
 
     #endregion
