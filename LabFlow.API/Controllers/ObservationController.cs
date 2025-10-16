@@ -182,6 +182,192 @@ public class ObservationController : ControllerBase
     }
 
     /// <summary>
+    /// Update an existing Observation resource
+    /// FHIR operation: PUT [base]/Observation/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>Updated observation resource</returns>
+    [HttpPut("{id}")]
+    [Consumes("application/json", "application/fhir+json")]
+    [ProducesResponseType(typeof(Observation), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateObservation(string id)
+    {
+        _logger.LogInformation("PUT Observation/{Id} - Updating observation", id);
+
+        var contentType = Request.ContentType?.ToLower();
+        if (contentType == null ||
+            (!contentType.Contains("application/json") &&
+             !contentType.Contains("application/fhir+json")))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Content-Type must be application/json or application/fhir+json",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        var existingEntity = await _context.Observations
+            .Where(o => o.Id == id && !o.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (existingEntity == null)
+        {
+            _logger.LogWarning("Observation {Id} not found for update", id);
+            return NotFound(CreateOperationOutcome(
+                $"Observation with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        Request.EnableBuffering();
+        string observationJson;
+        using (var reader = new StreamReader(
+            Request.Body,
+            encoding: System.Text.Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: false,
+            leaveOpen: true))
+        {
+            observationJson = await reader.ReadToEndAsync();
+            Request.Body.Position = 0;
+        }
+
+        if (string.IsNullOrWhiteSpace(observationJson))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Request body is empty",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Required));
+        }
+
+        Observation observation;
+        try
+        {
+            observation = _parser.Parse<Observation>(observationJson);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to parse Observation JSON: {Error}", ex.Message);
+            return BadRequest(CreateOperationOutcome(
+                $"Invalid FHIR Observation JSON: {ex.Message}",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        var validationResult = ValidateObservation(observation);
+        if (!validationResult.Success)
+        {
+            _logger.LogWarning("Observation validation failed: {Error}", validationResult.Error);
+            return BadRequest(CreateOperationOutcome(
+                validationResult.Error,
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        // Validate patient reference
+        if (!string.IsNullOrEmpty(observation.Subject?.Reference))
+        {
+            var patientId = observation.Subject.Reference.StartsWith("Patient/")
+                ? observation.Subject.Reference.Substring("Patient/".Length)
+                : observation.Subject.Reference;
+
+            var patientExists = await _context.Patients.AnyAsync(p => p.Id == patientId && !p.IsDeleted);
+            if (!patientExists)
+            {
+                return BadRequest(CreateOperationOutcome(
+                    $"Referenced patient '{observation.Subject.Reference}' does not exist",
+                    OperationOutcome.IssueSeverity.Error,
+                    OperationOutcome.IssueType.Invalid));
+            }
+        }
+
+        if (!string.IsNullOrEmpty(observation.Id) && observation.Id != id)
+        {
+            return BadRequest(CreateOperationOutcome(
+                $"Resource ID '{observation.Id}' does not match URL ID '{id}'",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        observation.Id = id;
+
+        var newVersion = existingEntity.VersionId + 1;
+        var now = DateTime.UtcNow;
+
+        observation.Meta = new Meta
+        {
+            VersionId = newVersion.ToString(),
+            LastUpdated = now
+        };
+
+        var fhirJson = _serializer.SerializeToString(observation);
+
+        var patientRef = observation.Subject?.Reference;
+        var extractedPatientId = !string.IsNullOrEmpty(patientRef) && patientRef.StartsWith("Patient/")
+            ? patientRef.Substring("Patient/".Length)
+            : patientRef;
+
+        existingEntity.FhirJson = fhirJson;
+        existingEntity.PatientId = extractedPatientId;
+        existingEntity.Code = observation.Code?.Coding?.FirstOrDefault()?.Code;
+        existingEntity.CodeDisplay = observation.Code?.Coding?.FirstOrDefault()?.Display;
+        existingEntity.Status = observation.Status?.ToString()?.ToLower();
+        existingEntity.Category = observation.Category?.FirstOrDefault()?.Coding?.FirstOrDefault()?.Code?.ToLower();
+        existingEntity.EffectiveDateTime = observation.Effective is FhirDateTime effectiveDateTime
+            ? DateTime.Parse(effectiveDateTime.Value)
+            : null;
+        existingEntity.ValueQuantity = observation.Value is Quantity quantity ? quantity.Value : null;
+        existingEntity.ValueUnit = observation.Value is Quantity quantityUnit ? quantityUnit.Unit : null;
+        existingEntity.ValueCodeableConcept = observation.Value is CodeableConcept codeableConcept
+            ? codeableConcept.Coding?.FirstOrDefault()?.Code
+            : null;
+        existingEntity.LastUpdated = now;
+        existingEntity.VersionId = newVersion;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Updated Observation {Id} to version {Version}", id, newVersion);
+
+        return Ok(observation);
+    }
+
+    /// <summary>
+    /// Delete an Observation resource (soft delete)
+    /// FHIR operation: DELETE [base]/Observation/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>No content on success</returns>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteObservation(string id)
+    {
+        _logger.LogInformation("DELETE Observation/{Id} - Soft deleting observation", id);
+
+        var observationEntity = await _context.Observations
+            .Where(o => o.Id == id && !o.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (observationEntity == null)
+        {
+            _logger.LogWarning("Observation {Id} not found for deletion", id);
+            return NotFound(CreateOperationOutcome(
+                $"Observation with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        observationEntity.IsDeleted = true;
+        observationEntity.LastUpdated = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Soft deleted Observation {Id}", id);
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Create a new Observation resource
     /// FHIR operation: POST [base]/Observation
     /// </summary>

@@ -10,9 +10,9 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 
 ## 🎯 Project Status
 
-**Timeline**: Week 1 of 2-week development sprint
-**Current Phase**: Core Patient Resource Implementation
-**Last Updated**: 2025-10-13
+**Timeline**: Week 5 of development sprint
+**Current Phase**: Phase 5 Complete - JWT Authentication & Authorization
+**Last Updated**: 2025-10-16
 
 ---
 
@@ -43,39 +43,47 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 - [x] **Patient Resource** (COMPLETED ✅)
   - [x] Entity model created
   - [x] Database schema with indexes
-  - [x] Controller with GET/POST endpoints
+  - [x] Controller with GET/POST/PUT/DELETE/SEARCH endpoints (full CRUD)
   - [x] FHIR validation (basic)
   - [x] Firely SDK integration (serialization/deserialization)
-  - [x] **Tested successfully** - GET and POST working correctly
+  - [x] **Tested successfully** - All CRUD operations working correctly
   - [x] **Search endpoints implemented** - name, identifier, birthdate, gender with Bundle responses
-  - [x] **Unit tests** - 13 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
+  - [x] **Soft delete** - IsDeleted flag for audit trail (no hard deletes)
+  - [x] **Version tracking** - VersionId increments on updates
+  - [x] **Unit tests** - 17 focused tests covering GET, POST, PUT, DELETE, and SEARCH operations (all passing ✅)
 
 - [x] **Observation Resource** (COMPLETED ✅)
   - [x] Entity model with laboratory-focused fields
   - [x] Database schema with optimized indexes (patient+date compound index)
-  - [x] Controller with GET/POST/SEARCH endpoints
+  - [x] Controller with GET/POST/PUT/DELETE/SEARCH endpoints (full CRUD)
   - [x] Patient reference validation
   - [x] LOINC code support
   - [x] Search by patient, code, category, date, status
-  - [x] **Unit tests** - 16 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
+  - [x] **Soft delete** - IsDeleted flag for audit trail
+  - [x] **Version tracking** - VersionId increments on updates
+  - [x] **Unit tests** - 20 focused tests covering GET, POST, PUT, DELETE, and SEARCH operations (all passing ✅)
 
 - [x] **DiagnosticReport Resource** (COMPLETED ✅)
   - [x] Entity model for grouped laboratory reports
   - [x] Database schema with optimized indexes (patient+issued compound index)
-  - [x] Controller with GET/POST/SEARCH endpoints
+  - [x] Controller with GET/POST/PUT/DELETE/SEARCH endpoints (full CRUD)
   - [x] Patient and observation references validation
   - [x] LOINC panel code support (e.g., CBC, Lipid Panel)
   - [x] Search by patient, code, category, date, issued, status
-  - [x] **Unit tests** - 18 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
+  - [x] **Soft delete** - IsDeleted flag for audit trail
+  - [x] **Version tracking** - VersionId increments on updates
+  - [x] **Unit tests** - 23 focused tests covering GET, POST, PUT, DELETE, and SEARCH operations (all passing ✅)
 
 - [x] **ServiceRequest Resource** (COMPLETED ✅)
   - [x] Entity model for laboratory test orders
   - [x] Database schema with optimized indexes (patient+authored compound index)
-  - [x] Controller with GET/POST/SEARCH endpoints
+  - [x] Controller with GET/POST/PUT/DELETE/SEARCH endpoints (full CRUD)
   - [x] Patient reference validation
   - [x] LOINC code support for test orders
   - [x] Search by patient, code, status, intent, category, authored, requester, performer
-  - [x] **Unit tests** - 16 focused tests covering GET, POST, and SEARCH operations (all passing ✅)
+  - [x] **Soft delete** - IsDeleted flag for audit trail
+  - [x] **Version tracking** - VersionId increments on updates
+  - [x] **Unit tests** - 20 focused tests covering GET, POST, PUT, DELETE, and SEARCH operations (all passing ✅)
 
 - [x] **CapabilityStatement** (COMPLETED ✅)
   - [x] GET /metadata endpoint
@@ -87,7 +95,7 @@ A production-ready FHIR R4 compliant API for seamless laboratory results exchang
 ### CI/CD & Automation
 - [x] **GitHub Actions** - Automated build & test pipeline
   - [x] Runs on every push to main
-  - [x] Executes all 64 unit tests
+  - [x] Executes all 106 unit tests
   - [x] Build status badge in README
 
 ---
@@ -395,6 +403,14 @@ Body: { "resourceType": "Patient", ... }
 # Read patient by ID
 GET /Patient/{id}
 
+# Update patient
+PUT /Patient/{id}
+Content-Type: application/json
+Body: { "resourceType": "Patient", ... }
+
+# Delete patient (soft delete)
+DELETE /Patient/{id}
+
 # Search patients
 GET /Patient?name=García
 GET /Patient?identifier=12345678
@@ -412,6 +428,14 @@ Body: { "resourceType": "Observation", "subject": { "reference": "Patient/123" }
 
 # Read observation by ID
 GET /Observation/{id}
+
+# Update observation
+PUT /Observation/{id}
+Content-Type: application/json
+Body: { "resourceType": "Observation", ... }
+
+# Delete observation (soft delete)
+DELETE /Observation/{id}
 
 # Search observations
 GET /Observation?patient=Patient/123          # All observations for a patient
@@ -440,6 +464,14 @@ Body: {
 
 # Read diagnostic report by ID
 GET /DiagnosticReport/{id}
+
+# Update diagnostic report
+PUT /DiagnosticReport/{id}
+Content-Type: application/json
+Body: { "resourceType": "DiagnosticReport", ... }
+
+# Delete diagnostic report (soft delete)
+DELETE /DiagnosticReport/{id}
 
 # Search diagnostic reports
 GET /DiagnosticReport?patient=Patient/123     # All reports for a patient
@@ -474,6 +506,14 @@ Body: {
 
 # Read service request by ID
 GET /ServiceRequest/{id}
+
+# Update service request
+PUT /ServiceRequest/{id}
+Content-Type: application/json
+Body: { "resourceType": "ServiceRequest", ... }
+
+# Delete service request (soft delete)
+DELETE /ServiceRequest/{id}
 
 # Search service requests
 GET /ServiceRequest?patient=Patient/123       # All orders for a patient
@@ -523,27 +563,43 @@ dotnet test --filter "FullyQualifiedName~PatientControllerTests"
 ```
 
 **Test Coverage:**
-- **64 focused unit tests** covering Patient, Observation, DiagnosticReport, and ServiceRequest resources
-- **Patient** (13 tests):
+- **106 focused unit tests** covering Patient, Observation, DiagnosticReport, ServiceRequest, and Authentication
+- **Patient** (17 tests):
   - GetPatient (2): Valid ID, Not Found scenarios
   - CreatePatient (3): Valid resource, Invalid content-type, FHIR validation
+  - UpdatePatient (2): Valid update, Not Found scenarios
+  - DeletePatient (2): Valid delete (soft), Not Found scenarios
   - SearchPatients (8): Individual parameters (name, identifier, birthdate, gender), combined filters, empty results, invalid inputs
-- **Observation** (16 tests):
+- **Observation** (20 tests):
   - GetObservation (2): Valid ID, Not Found scenarios
   - CreateObservation (5): Valid resource, Invalid content-type, Missing status/code, Non-existent patient reference
+  - UpdateObservation (2): Valid update, Not Found scenarios
+  - DeleteObservation (2): Valid delete (soft), Not Found scenarios
   - SearchObservations (9): Individual parameters (patient, code, category, date, status), patient reference format handling, combined filters, empty results, invalid date
-- **DiagnosticReport** (18 tests):
+- **DiagnosticReport** (23 tests):
   - GetDiagnosticReport (2): Valid ID, Not Found scenarios
   - CreateDiagnosticReport (7): Valid report, Invalid content-type, Missing status/code, Non-existent patient, Non-existent observation, Invalid reference type
+  - UpdateDiagnosticReport (2): Valid update, Not Found scenarios
+  - DeleteDiagnosticReport (2): Valid delete (soft), Not Found scenarios
   - SearchDiagnosticReports (10): Individual parameters (patient, code, category, date, issued, status), combined filters, empty results, invalid date/issued
-- **ServiceRequest** (16 tests):
+- **ServiceRequest** (20 tests):
   - GetServiceRequest (2): Valid ID, Not Found scenarios
   - CreateServiceRequest (5): Valid request, Invalid content-type, Missing status/intent, Non-existent patient reference
+  - UpdateServiceRequest (2): Valid update, Not Found scenarios
+  - DeleteServiceRequest (2): Valid delete (soft), Not Found scenarios
   - SearchServiceRequests (10): Individual parameters (patient, code, status, intent, category, authored), patient reference format handling, combined filters, empty results, invalid authored date
+- **AuthService** (15 tests):
+  - Password hashing (3): Hash generation, verification success/failure
+  - JWT generation (4): Token structure, claims validation, expiration, signature
+  - Token validation (8): Valid token, expired, invalid signature, malformed, missing claims
+- **AuthController** (11 tests):
+  - Register (4): Valid registration, duplicate email, invalid role, password requirements
+  - Login (4): Valid login, wrong password, non-existent user, token structure
+  - GetMe (3): Valid token, invalid token, missing token
 - **Test isolation**: Each test uses unique in-memory database
 - **Framework**: xUnit + FluentAssertions + EF Core InMemory
 
-All tests passing ✅ (64/64)
+All tests passing ✅ (106/106)
 
 ### Database Commands
 
@@ -665,19 +721,20 @@ LabFlow/
 ## 🎯 Roadmap
 
 ### Phase 1: Core Resources (Week 1) - COMPLETED ✅
-- [x] **Patient** (CRUD + search + 13 tests) ✅
-- [x] **Observation** (CRUD + search + patient validation + 16 tests) ✅
+- [x] **Patient** (Full CRUD + search + 17 tests) ✅
+- [x] **Observation** (Full CRUD + search + patient validation + 20 tests) ✅
 
 ### Phase 2: FHIR Compliance & Automation (Week 2) - COMPLETED ✅
 - [x] **CapabilityStatement** (GET /metadata) - FHIR standard server documentation ✅
 - [x] **CI/CD Pipeline** (GitHub Actions) - Automated build & test ✅
 
 ### Phase 3: Grouped Reports & References (Week 3) - COMPLETED ✅
-- [x] **DiagnosticReport** (CRUD + search + patient/observation validation + 18 tests) ✅
+- [x] **DiagnosticReport** (Full CRUD + search + patient/observation validation + 23 tests) ✅
 
 ### Phase 4: Laboratory Order Workflow (Week 4) - COMPLETED ✅
-- [x] **ServiceRequest** (CRUD + search + patient validation + 16 tests) ✅
-- Complete laboratory workflow: Order (ServiceRequest) → Result (Observation) → Report (DiagnosticReport)
+- [x] **ServiceRequest** (Full CRUD + search + patient validation + 20 tests) ✅
+- [x] Complete laboratory workflow: Order (ServiceRequest) → Result (Observation) → Report (DiagnosticReport)
+- [x] **Full CRUD operations** for all 4 FHIR resources (CREATE, READ, UPDATE, DELETE, SEARCH)
 
 ### Phase 5: Security & Authentication (Week 5) - COMPLETED ✅
 - [x] **JWT Bearer Token Authentication** ✅
@@ -691,11 +748,11 @@ LabFlow/
   - CapabilityStatement security documentation updated
   - Swagger UI with Bearer token support
 
-### Phase 6: Advanced Features (Future)
+### Phase 6: Advanced Features & Testing (Next)
+- [ ] **Integration tests** (TestServer end-to-end validation OR TestContainers with PostgreSQL)
 - [ ] Advanced FHIR search (_include, _revinclude, sorting, pagination)
-- [ ] Integration tests
-- [ ] PostgreSQL migration
-- [ ] Azure deployment
+- [ ] PostgreSQL migration (from SQLite to production-ready database)
+- [ ] Azure deployment (App Service + Azure SQL/PostgreSQL)
 
 ### Phase 6: Enhanced Validation (Future)
 - [ ] **LOINC code validation** for Observation.code
@@ -744,6 +801,7 @@ dotnet ef database update --project LabFlow.API
 
 - [FHIR R4 Specification](http://hl7.org/fhir/R4/)
 - [Firely SDK Documentation](https://docs.fire.ly/projects/Firely-NET-SDK/)
+- [Testing Strategy](./TESTING_STRATEGY.md) - Pragmatic testing approach and roadmap
 - [Project Planning](./labflow-fhir-readme.md)
 - [Learning Path](./fhir_learning_path.md)
 

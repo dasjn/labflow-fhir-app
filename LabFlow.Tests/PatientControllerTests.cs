@@ -395,4 +395,123 @@ public class PatientControllerTests : IDisposable
     }
 
     #endregion
+
+    #region UpdatePatient Tests
+
+    [Fact]
+    public async Task UpdatePatient_ValidPatient_ReturnsOk()
+    {
+        // Arrange
+        var patient = CreateTestPatient("García", "Juan", "12345678");
+        var patientId = await SeedPatient(patient);
+
+        // Update patient data
+        patient.Id = patientId;
+        patient.Name[0].Family = "García-Modified";
+        patient.Name[0].Given = new[] { "Juan Carlos" };
+        patient.BirthDate = "1990-05-20";
+        patient.Gender = AdministrativeGender.Male;
+
+        var patientJson = _serializer.SerializeToString(patient);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(patientJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = patientJson.Length;
+
+        // Act
+        var result = await _controller.UpdatePatient(patientId);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var okResult = result as OkObjectResult;
+        var returnedPatient = okResult!.Value as Patient;
+
+        returnedPatient.Should().NotBeNull();
+        returnedPatient!.Id.Should().Be(patientId);
+        returnedPatient.Name[0].Family.Should().Be("García-Modified");
+        returnedPatient.Name[0].Given.Should().Contain("Juan Carlos");
+        returnedPatient.BirthDate.Should().Be("1990-05-20");
+        returnedPatient.Gender.Should().Be(AdministrativeGender.Male);
+        returnedPatient.Meta!.VersionId.Should().Be("2");
+
+        // Verify database was updated
+        var updatedEntity = await _context.Patients.FindAsync(patientId);
+        updatedEntity.Should().NotBeNull();
+        updatedEntity!.FamilyName.Should().Be("García-Modified");
+        updatedEntity.VersionId.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UpdatePatient_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid().ToString();
+        var patient = CreateTestPatient("García", "Juan");
+        patient.Id = nonExistentId;
+
+        var patientJson = _serializer.SerializeToString(patient);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(patientJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = patientJson.Length;
+
+        // Act
+        var result = await _controller.UpdatePatient(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
+
+    #region DeletePatient Tests
+
+    [Fact]
+    public async Task DeletePatient_ValidId_ReturnsNoContent()
+    {
+        // Arrange
+        var patient = CreateTestPatient("García", "Juan", "12345678");
+        var patientId = await SeedPatient(patient);
+
+        // Act
+        var result = await _controller.DeletePatient(patientId);
+
+        // Assert
+        result.Should().BeOfType<NoContentResult>();
+
+        // Verify soft delete
+        var deletedEntity = await _context.Patients.FindAsync(patientId);
+        deletedEntity.Should().NotBeNull();
+        deletedEntity!.IsDeleted.Should().BeTrue();
+        deletedEntity.LastUpdated.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeletePatient_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid().ToString();
+
+        // Act
+        var result = await _controller.DeletePatient(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
 }

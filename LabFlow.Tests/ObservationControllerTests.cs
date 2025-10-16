@@ -575,4 +575,133 @@ public class ObservationControllerTests : IDisposable
     }
 
     #endregion
+
+    #region UpdateObservation Tests
+
+    [Fact]
+    public async Task UpdateObservation_ValidObservation_ReturnsOk()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var observation = CreateTestObservation(
+            patientId: patientId,
+            loincCode: "2339-0",
+            valueQuantity: 95,
+            valueUnit: "mg/dL"
+        );
+        var observationId = await SeedObservation(observation);
+
+        // Update observation data
+        observation.Id = observationId;
+        observation.Status = ObservationStatus.Amended;
+        observation.Value = new Quantity
+        {
+            Value = 110,
+            Unit = "mg/dL",
+            System = "http://unitsofmeasure.org"
+        };
+
+        var observationJson = _serializer.SerializeToString(observation);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(observationJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = observationJson.Length;
+
+        // Act
+        var result = await _controller.UpdateObservation(observationId);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var okResult = result as OkObjectResult;
+        var returnedObservation = okResult!.Value as Observation;
+
+        returnedObservation.Should().NotBeNull();
+        returnedObservation!.Id.Should().Be(observationId);
+        returnedObservation.Status.Should().Be(ObservationStatus.Amended);
+        ((Quantity)returnedObservation.Value).Value.Should().Be(110);
+        returnedObservation.Meta!.VersionId.Should().Be("2");
+
+        // Verify database was updated
+        var updatedEntity = await _context.Observations.FindAsync(observationId);
+        updatedEntity.Should().NotBeNull();
+        updatedEntity!.Status.Should().Be("amended");
+        updatedEntity.ValueQuantity.Should().Be(110);
+        updatedEntity.VersionId.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UpdateObservation_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var nonExistentId = Guid.NewGuid().ToString();
+        var observation = CreateTestObservation(patientId: patientId);
+        observation.Id = nonExistentId;
+
+        var observationJson = _serializer.SerializeToString(observation);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(observationJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = observationJson.Length;
+
+        // Act
+        var result = await _controller.UpdateObservation(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
+
+    #region DeleteObservation Tests
+
+    [Fact]
+    public async Task DeleteObservation_ValidId_ReturnsNoContent()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var observation = CreateTestObservation(patientId: patientId);
+        var observationId = await SeedObservation(observation);
+
+        // Act
+        var result = await _controller.DeleteObservation(observationId);
+
+        // Assert
+        result.Should().BeOfType<NoContentResult>();
+
+        // Verify soft delete
+        var deletedEntity = await _context.Observations.FindAsync(observationId);
+        deletedEntity.Should().NotBeNull();
+        deletedEntity!.IsDeleted.Should().BeTrue();
+        deletedEntity.LastUpdated.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeleteObservation_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid().ToString();
+
+        // Act
+        var result = await _controller.DeleteObservation(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
 }

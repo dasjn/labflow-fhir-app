@@ -710,4 +710,139 @@ public class DiagnosticReportControllerTests : IDisposable
     }
 
     #endregion
+
+    #region UpdateDiagnosticReport Tests
+
+    [Fact]
+    public async Task UpdateDiagnosticReport_ValidReport_ReturnsOk()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var obs1Id = await SeedTestObservation(patientId, "718-7");
+        var obs2Id = await SeedTestObservation(patientId, "6690-2");
+
+        var report = CreateTestDiagnosticReport(
+            patientId: patientId,
+            loincCode: "58410-2",
+            observationIds: new List<string> { obs1Id },
+            conclusion: "Initial conclusion"
+        );
+        var reportId = await SeedDiagnosticReport(report);
+
+        // Update report data
+        report.Id = reportId;
+        report.Status = DiagnosticReport.DiagnosticReportStatus.Amended;
+        report.Result = new List<ResourceReference>
+        {
+            new ResourceReference($"Observation/{obs1Id}"),
+            new ResourceReference($"Observation/{obs2Id}")
+        };
+        report.Conclusion = "Updated conclusion - added second observation";
+
+        var reportJson = _serializer.SerializeToString(report);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(reportJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = reportJson.Length;
+
+        // Act
+        var result = await _controller.UpdateDiagnosticReport(reportId);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var okResult = result as OkObjectResult;
+        var returnedReport = okResult!.Value as DiagnosticReport;
+
+        returnedReport.Should().NotBeNull();
+        returnedReport!.Id.Should().Be(reportId);
+        returnedReport.Status.Should().Be(DiagnosticReport.DiagnosticReportStatus.Amended);
+        returnedReport.Result.Should().HaveCount(2);
+        returnedReport.Conclusion.Should().Be("Updated conclusion - added second observation");
+        returnedReport.Meta!.VersionId.Should().Be("2");
+
+        // Verify database was updated
+        var updatedEntity = await _context.DiagnosticReports.FindAsync(reportId);
+        updatedEntity.Should().NotBeNull();
+        updatedEntity!.Status.Should().Be("amended");
+        updatedEntity.Conclusion.Should().Be("Updated conclusion - added second observation");
+        updatedEntity.ResultIds.Should().Contain(obs1Id);
+        updatedEntity.ResultIds.Should().Contain(obs2Id);
+        updatedEntity.VersionId.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UpdateDiagnosticReport_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var nonExistentId = Guid.NewGuid().ToString();
+        var report = CreateTestDiagnosticReport(patientId: patientId);
+        report.Id = nonExistentId;
+
+        var reportJson = _serializer.SerializeToString(report);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(reportJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = reportJson.Length;
+
+        // Act
+        var result = await _controller.UpdateDiagnosticReport(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
+
+    #region DeleteDiagnosticReport Tests
+
+    [Fact]
+    public async Task DeleteDiagnosticReport_ValidId_ReturnsNoContent()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var report = CreateTestDiagnosticReport(patientId: patientId);
+        var reportId = await SeedDiagnosticReport(report);
+
+        // Act
+        var result = await _controller.DeleteDiagnosticReport(reportId);
+
+        // Assert
+        result.Should().BeOfType<NoContentResult>();
+
+        // Verify soft delete
+        var deletedEntity = await _context.DiagnosticReports.FindAsync(reportId);
+        deletedEntity.Should().NotBeNull();
+        deletedEntity!.IsDeleted.Should().BeTrue();
+        deletedEntity.LastUpdated.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeleteDiagnosticReport_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid().ToString();
+
+        // Act
+        var result = await _controller.DeleteDiagnosticReport(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
 }

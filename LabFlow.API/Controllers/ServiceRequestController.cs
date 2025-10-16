@@ -206,6 +206,197 @@ public class ServiceRequestController : ControllerBase
     }
 
     /// <summary>
+    /// Update an existing ServiceRequest resource
+    /// FHIR operation: PUT [base]/ServiceRequest/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>Updated service request resource</returns>
+    [HttpPut("{id}")]
+    [Consumes("application/json", "application/fhir+json")]
+    [ProducesResponseType(typeof(ServiceRequest), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateServiceRequest(string id)
+    {
+        _logger.LogInformation("PUT ServiceRequest/{Id} - Updating service request", id);
+
+        var contentType = Request.ContentType?.ToLower();
+        if (contentType == null ||
+            (!contentType.Contains("application/json") &&
+             !contentType.Contains("application/fhir+json")))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Content-Type must be application/json or application/fhir+json",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        var existingEntity = await _context.ServiceRequests
+            .Where(sr => sr.Id == id && !sr.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (existingEntity == null)
+        {
+            _logger.LogWarning("ServiceRequest {Id} not found for update", id);
+            return NotFound(CreateOperationOutcome(
+                $"ServiceRequest with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        Request.EnableBuffering();
+        string serviceRequestJson;
+        using (var reader = new StreamReader(
+            Request.Body,
+            encoding: System.Text.Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: false,
+            leaveOpen: true))
+        {
+            serviceRequestJson = await reader.ReadToEndAsync();
+            Request.Body.Position = 0;
+        }
+
+        if (string.IsNullOrWhiteSpace(serviceRequestJson))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Request body is empty",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Required));
+        }
+
+        ServiceRequest serviceRequest;
+        try
+        {
+            serviceRequest = _parser.Parse<ServiceRequest>(serviceRequestJson);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to parse ServiceRequest JSON: {Error}", ex.Message);
+            return BadRequest(CreateOperationOutcome(
+                $"Invalid FHIR ServiceRequest JSON: {ex.Message}",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        var validationResult = ValidateServiceRequest(serviceRequest);
+        if (!validationResult.Success)
+        {
+            _logger.LogWarning("ServiceRequest validation failed: {Error}", validationResult.Error);
+            return BadRequest(CreateOperationOutcome(
+                validationResult.Error,
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        // Validate patient reference
+        if (!string.IsNullOrEmpty(serviceRequest.Subject?.Reference))
+        {
+            var patientId = serviceRequest.Subject.Reference.StartsWith("Patient/")
+                ? serviceRequest.Subject.Reference.Substring("Patient/".Length)
+                : serviceRequest.Subject.Reference;
+
+            var patientExists = await _context.Patients.AnyAsync(p => p.Id == patientId && !p.IsDeleted);
+            if (!patientExists)
+            {
+                return BadRequest(CreateOperationOutcome(
+                    $"Referenced patient '{serviceRequest.Subject.Reference}' does not exist",
+                    OperationOutcome.IssueSeverity.Error,
+                    OperationOutcome.IssueType.Invalid));
+            }
+        }
+
+        if (!string.IsNullOrEmpty(serviceRequest.Id) && serviceRequest.Id != id)
+        {
+            return BadRequest(CreateOperationOutcome(
+                $"Resource ID '{serviceRequest.Id}' does not match URL ID '{id}'",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        serviceRequest.Id = id;
+
+        var newVersion = existingEntity.VersionId + 1;
+        var now = DateTime.UtcNow;
+
+        serviceRequest.Meta = new Meta
+        {
+            VersionId = newVersion.ToString(),
+            LastUpdated = now
+        };
+
+        var fhirJson = _serializer.SerializeToString(serviceRequest);
+
+        var patientRef = serviceRequest.Subject?.Reference;
+        var extractedPatientId = !string.IsNullOrEmpty(patientRef) && patientRef.StartsWith("Patient/")
+            ? patientRef.Substring("Patient/".Length)
+            : patientRef;
+
+        var requesterRef = serviceRequest.Requester?.Reference;
+        var performerRef = serviceRequest.Performer?.FirstOrDefault()?.Reference;
+
+        existingEntity.FhirJson = fhirJson;
+        existingEntity.PatientId = extractedPatientId;
+        existingEntity.Code = serviceRequest.Code?.Coding?.FirstOrDefault()?.Code;
+        existingEntity.CodeDisplay = serviceRequest.Code?.Coding?.FirstOrDefault()?.Display;
+        existingEntity.Status = serviceRequest.Status?.ToString()?.ToLower();
+        existingEntity.Intent = serviceRequest.Intent?.ToString()?.ToLower();
+        existingEntity.Category = serviceRequest.Category?.FirstOrDefault()?.Coding?.FirstOrDefault()?.Code;
+        existingEntity.Priority = serviceRequest.Priority?.ToString()?.ToLower();
+        existingEntity.AuthoredOn = serviceRequest.AuthoredOn != null
+            ? DateTime.Parse(serviceRequest.AuthoredOn)
+            : null;
+        existingEntity.RequesterId = requesterRef;
+        existingEntity.PerformerId = performerRef;
+        existingEntity.OccurrenceDateTime = serviceRequest.Occurrence is FhirDateTime occurrenceDateTime
+            ? DateTime.Parse(occurrenceDateTime.Value)
+            : null;
+        existingEntity.LastUpdated = now;
+        existingEntity.VersionId = newVersion;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Updated ServiceRequest {Id} to version {Version}", id, newVersion);
+
+        return Ok(serviceRequest);
+    }
+
+    /// <summary>
+    /// Delete a ServiceRequest resource (soft delete)
+    /// FHIR operation: DELETE [base]/ServiceRequest/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>No content on success</returns>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteServiceRequest(string id)
+    {
+        _logger.LogInformation("DELETE ServiceRequest/{Id} - Soft deleting service request", id);
+
+        var serviceRequestEntity = await _context.ServiceRequests
+            .Where(sr => sr.Id == id && !sr.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (serviceRequestEntity == null)
+        {
+            _logger.LogWarning("ServiceRequest {Id} not found for deletion", id);
+            return NotFound(CreateOperationOutcome(
+                $"ServiceRequest with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        serviceRequestEntity.IsDeleted = true;
+        serviceRequestEntity.LastUpdated = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Soft deleted ServiceRequest {Id}", id);
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Create a new ServiceRequest resource
     /// FHIR operation: POST [base]/ServiceRequest
     /// </summary>

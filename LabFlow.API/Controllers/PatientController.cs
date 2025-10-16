@@ -191,6 +191,169 @@ public class PatientController : ControllerBase
     }
 
     /// <summary>
+    /// Update an existing Patient resource
+    /// FHIR operation: PUT [base]/Patient/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>Updated patient resource</returns>
+    [HttpPut("{id}")]
+    [Consumes("application/json", "application/fhir+json")]
+    [ProducesResponseType(typeof(Patient), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdatePatient(string id)
+    {
+        _logger.LogInformation("PUT Patient/{Id} - Updating patient", id);
+
+        // Validate Content-Type
+        var contentType = Request.ContentType?.ToLower();
+        if (contentType == null ||
+            (!contentType.Contains("application/json") &&
+             !contentType.Contains("application/fhir+json")))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Content-Type must be application/json or application/fhir+json",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        // Check if patient exists
+        var existingEntity = await _context.Patients
+            .Where(p => p.Id == id && !p.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (existingEntity == null)
+        {
+            _logger.LogWarning("Patient {Id} not found for update", id);
+            return NotFound(CreateOperationOutcome(
+                $"Patient with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        // Read and parse request body
+        Request.EnableBuffering();
+        string patientJson;
+        using (var reader = new StreamReader(
+            Request.Body,
+            encoding: System.Text.Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: false,
+            leaveOpen: true))
+        {
+            patientJson = await reader.ReadToEndAsync();
+            Request.Body.Position = 0;
+        }
+
+        if (string.IsNullOrWhiteSpace(patientJson))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Request body is empty",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Required));
+        }
+
+        Patient patient;
+        try
+        {
+            patient = _parser.Parse<Patient>(patientJson);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to parse Patient JSON: {Error}", ex.Message);
+            return BadRequest(CreateOperationOutcome(
+                $"Invalid FHIR Patient JSON: {ex.Message}",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        // Validate resource
+        var validationResult = ValidatePatient(patient);
+        if (!validationResult.Success)
+        {
+            _logger.LogWarning("Patient validation failed: {Error}", validationResult.Error);
+            return BadRequest(CreateOperationOutcome(
+                validationResult.Error,
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        // Ensure ID matches
+        if (!string.IsNullOrEmpty(patient.Id) && patient.Id != id)
+        {
+            return BadRequest(CreateOperationOutcome(
+                $"Resource ID '{patient.Id}' does not match URL ID '{id}'",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        patient.Id = id;
+
+        // Increment version
+        var newVersion = existingEntity.VersionId + 1;
+        var now = DateTime.UtcNow;
+
+        patient.Meta = new Meta
+        {
+            VersionId = newVersion.ToString(),
+            LastUpdated = now
+        };
+
+        // Update entity
+        var fhirJson = _serializer.SerializeToString(patient);
+        existingEntity.FhirJson = fhirJson;
+        existingEntity.FamilyName = patient.Name?.FirstOrDefault()?.Family;
+        existingEntity.GivenName = patient.Name?.FirstOrDefault()?.Given?.FirstOrDefault();
+        existingEntity.Identifier = patient.Identifier?.FirstOrDefault()?.Value;
+        existingEntity.BirthDate = patient.BirthDate != null ? DateTime.Parse(patient.BirthDate) : null;
+        existingEntity.Gender = patient.Gender?.ToString()?.ToLower();
+        existingEntity.LastUpdated = now;
+        existingEntity.VersionId = newVersion;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Updated Patient {Id} to version {Version}", id, newVersion);
+
+        return Ok(patient);
+    }
+
+    /// <summary>
+    /// Delete a Patient resource (soft delete)
+    /// FHIR operation: DELETE [base]/Patient/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>No content on success</returns>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeletePatient(string id)
+    {
+        _logger.LogInformation("DELETE Patient/{Id} - Soft deleting patient", id);
+
+        var patientEntity = await _context.Patients
+            .Where(p => p.Id == id && !p.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (patientEntity == null)
+        {
+            _logger.LogWarning("Patient {Id} not found for deletion", id);
+            return NotFound(CreateOperationOutcome(
+                $"Patient with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        // Soft delete (preserves audit trail)
+        patientEntity.IsDeleted = true;
+        patientEntity.LastUpdated = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Soft deleted Patient {Id}", id);
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Create a new Patient resource
     /// FHIR operation: POST [base]/Patient
     /// </summary>

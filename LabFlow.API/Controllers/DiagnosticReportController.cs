@@ -199,6 +199,190 @@ public class DiagnosticReportController : ControllerBase
     }
 
     /// <summary>
+    /// Update an existing DiagnosticReport resource
+    /// FHIR operation: PUT [base]/DiagnosticReport/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>Updated diagnostic report resource</returns>
+    [HttpPut("{id}")]
+    [Consumes("application/json", "application/fhir+json")]
+    [ProducesResponseType(typeof(DiagnosticReport), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> UpdateDiagnosticReport(string id)
+    {
+        _logger.LogInformation("PUT DiagnosticReport/{Id} - Updating diagnostic report", id);
+
+        // Validate Content-Type
+        var contentType = Request.ContentType?.ToLower();
+        if (contentType == null ||
+            (!contentType.Contains("application/json") &&
+             !contentType.Contains("application/fhir+json")))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Content-Type must be application/json or application/fhir+json",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        // Check if diagnostic report exists
+        var existingEntity = await _context.DiagnosticReports
+            .Where(d => d.Id == id && !d.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (existingEntity == null)
+        {
+            _logger.LogWarning("DiagnosticReport {Id} not found for update", id);
+            return NotFound(CreateOperationOutcome(
+                $"DiagnosticReport with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        // Read and parse request body
+        Request.EnableBuffering();
+        string reportJson;
+        using (var reader = new StreamReader(
+            Request.Body,
+            encoding: System.Text.Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: false,
+            leaveOpen: true))
+        {
+            reportJson = await reader.ReadToEndAsync();
+            Request.Body.Position = 0;
+        }
+
+        if (string.IsNullOrWhiteSpace(reportJson))
+        {
+            return BadRequest(CreateOperationOutcome(
+                "Request body is empty",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Required));
+        }
+
+        DiagnosticReport report;
+        try
+        {
+            report = _parser.Parse<DiagnosticReport>(reportJson);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to parse DiagnosticReport JSON: {Error}", ex.Message);
+            return BadRequest(CreateOperationOutcome(
+                $"Invalid FHIR DiagnosticReport JSON: {ex.Message}",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Structure));
+        }
+
+        // Validate resource
+        var validationResult = await ValidateDiagnosticReport(report);
+        if (!validationResult.Success)
+        {
+            _logger.LogWarning("DiagnosticReport validation failed: {Error}", validationResult.Error);
+            return BadRequest(CreateOperationOutcome(
+                validationResult.Error,
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        // Ensure ID matches
+        if (!string.IsNullOrEmpty(report.Id) && report.Id != id)
+        {
+            return BadRequest(CreateOperationOutcome(
+                $"Resource ID '{report.Id}' does not match URL ID '{id}'",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.Invalid));
+        }
+
+        report.Id = id;
+
+        // Increment version
+        var newVersion = existingEntity.VersionId + 1;
+        var now = DateTime.UtcNow;
+
+        report.Meta = new Meta
+        {
+            VersionId = newVersion.ToString(),
+            LastUpdated = now
+        };
+
+        // Serialize to JSON
+        var fhirJson = _serializer.SerializeToString(report);
+
+        // Extract searchable fields
+        var patientRef = report.Subject?.Reference;
+        var extractedPatientId = !string.IsNullOrEmpty(patientRef) && patientRef.StartsWith("Patient/")
+            ? patientRef.Substring("Patient/".Length)
+            : patientRef;
+
+        // Extract result observation IDs
+        var resultIds = report.Result?.Select(r => r.Reference?.Replace("Observation/", ""))
+            .Where(id => !string.IsNullOrEmpty(id))
+            .ToList();
+
+        // Update entity
+        existingEntity.FhirJson = fhirJson;
+        existingEntity.PatientId = extractedPatientId;
+        existingEntity.Code = report.Code?.Coding?.FirstOrDefault()?.Code;
+        existingEntity.CodeDisplay = report.Code?.Coding?.FirstOrDefault()?.Display;
+        existingEntity.Status = report.Status?.ToString()?.ToLower();
+        existingEntity.Category = report.Category?.FirstOrDefault()?.Coding?.FirstOrDefault()?.Code?.ToUpper();
+        existingEntity.EffectiveDateTime = report.Effective is FhirDateTime effectiveDateTime
+            ? DateTime.Parse(effectiveDateTime.Value)
+            : report.Effective is Period period && period.StartElement != null
+                ? DateTime.Parse(period.StartElement.Value)
+                : null;
+        existingEntity.Issued = report.IssuedElement?.Value?.UtcDateTime;
+        existingEntity.ResultIds = resultIds != null && resultIds.Any() ? string.Join(",", resultIds) : null;
+        existingEntity.Conclusion = report.Conclusion;
+        existingEntity.LastUpdated = now;
+        existingEntity.VersionId = newVersion;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Updated DiagnosticReport {Id} to version {Version}", id, newVersion);
+
+        return Ok(report);
+    }
+
+    /// <summary>
+    /// Delete a DiagnosticReport resource (soft delete)
+    /// FHIR operation: DELETE [base]/DiagnosticReport/[id]
+    /// </summary>
+    /// <param name="id">FHIR Resource ID</param>
+    /// <returns>No content on success</returns>
+    [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(OperationOutcome), StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteDiagnosticReport(string id)
+    {
+        _logger.LogInformation("DELETE DiagnosticReport/{Id} - Soft deleting diagnostic report", id);
+
+        var reportEntity = await _context.DiagnosticReports
+            .Where(d => d.Id == id && !d.IsDeleted)
+            .FirstOrDefaultAsync();
+
+        if (reportEntity == null)
+        {
+            _logger.LogWarning("DiagnosticReport {Id} not found for deletion", id);
+            return NotFound(CreateOperationOutcome(
+                $"DiagnosticReport with ID '{id}' not found",
+                OperationOutcome.IssueSeverity.Error,
+                OperationOutcome.IssueType.NotFound));
+        }
+
+        // Soft delete (preserves audit trail)
+        reportEntity.IsDeleted = true;
+        reportEntity.LastUpdated = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        _logger.LogInformation("Soft deleted DiagnosticReport {Id}", id);
+
+        return NoContent();
+    }
+
+    /// <summary>
     /// Create a new DiagnosticReport resource
     /// FHIR operation: POST [base]/DiagnosticReport
     /// </summary>

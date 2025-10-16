@@ -589,4 +589,129 @@ public class ServiceRequestControllerTests : IDisposable
     }
 
     #endregion
+
+    #region UpdateServiceRequest Tests
+
+    [Fact]
+    public async Task UpdateServiceRequest_ValidServiceRequest_ReturnsOk()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var serviceRequest = CreateTestServiceRequest(
+            patientId: patientId,
+            loincCode: "2339-0",
+            status: "active",
+            intent: "order",
+            priority: "routine"
+        );
+        var serviceRequestId = await SeedServiceRequest(serviceRequest);
+
+        // Update service request data
+        serviceRequest.Id = serviceRequestId;
+        serviceRequest.Status = RequestStatus.Completed;
+        serviceRequest.Priority = RequestPriority.Urgent;
+
+        var serviceRequestJson = _serializer.SerializeToString(serviceRequest);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(serviceRequestJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = serviceRequestJson.Length;
+
+        // Act
+        var result = await _controller.UpdateServiceRequest(serviceRequestId);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        var okResult = result as OkObjectResult;
+        var returnedServiceRequest = okResult!.Value as ServiceRequest;
+
+        returnedServiceRequest.Should().NotBeNull();
+        returnedServiceRequest!.Id.Should().Be(serviceRequestId);
+        returnedServiceRequest.Status.Should().Be(RequestStatus.Completed);
+        returnedServiceRequest.Priority.Should().Be(RequestPriority.Urgent);
+        returnedServiceRequest.Meta!.VersionId.Should().Be("2");
+
+        // Verify database was updated
+        var updatedEntity = await _context.ServiceRequests.FindAsync(serviceRequestId);
+        updatedEntity.Should().NotBeNull();
+        updatedEntity!.Status.Should().Be("completed");
+        updatedEntity.Priority.Should().Be("urgent");
+        updatedEntity.VersionId.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task UpdateServiceRequest_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var nonExistentId = Guid.NewGuid().ToString();
+        var serviceRequest = CreateTestServiceRequest(patientId: patientId);
+        serviceRequest.Id = nonExistentId;
+
+        var serviceRequestJson = _serializer.SerializeToString(serviceRequest);
+        var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(serviceRequestJson));
+        _controller.HttpContext.Request.Body = stream;
+        _controller.HttpContext.Request.ContentType = "application/json";
+        _controller.HttpContext.Request.ContentLength = serviceRequestJson.Length;
+
+        // Act
+        var result = await _controller.UpdateServiceRequest(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
+
+    #region DeleteServiceRequest Tests
+
+    [Fact]
+    public async Task DeleteServiceRequest_ValidId_ReturnsNoContent()
+    {
+        // Arrange
+        var patientId = await SeedTestPatient();
+        var serviceRequest = CreateTestServiceRequest(patientId: patientId);
+        var serviceRequestId = await SeedServiceRequest(serviceRequest);
+
+        // Act
+        var result = await _controller.DeleteServiceRequest(serviceRequestId);
+
+        // Assert
+        result.Should().BeOfType<NoContentResult>();
+
+        // Verify soft delete
+        var deletedEntity = await _context.ServiceRequests.FindAsync(serviceRequestId);
+        deletedEntity.Should().NotBeNull();
+        deletedEntity!.IsDeleted.Should().BeTrue();
+        deletedEntity.LastUpdated.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeleteServiceRequest_NonExistentId_ReturnsNotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid().ToString();
+
+        // Act
+        var result = await _controller.DeleteServiceRequest(nonExistentId);
+
+        // Assert
+        result.Should().BeOfType<NotFoundObjectResult>();
+        var notFoundResult = result as NotFoundObjectResult;
+        var outcome = notFoundResult!.Value as OperationOutcome;
+
+        outcome.Should().NotBeNull();
+        outcome!.Issue.Should().HaveCount(1);
+        outcome.Issue[0].Severity.Should().Be(OperationOutcome.IssueSeverity.Error);
+        outcome.Issue[0].Code.Should().Be(OperationOutcome.IssueType.NotFound);
+    }
+
+    #endregion
 }
