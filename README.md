@@ -833,10 +833,111 @@ dotnet ef database update --project LabFlow.API
 
 ---
 
+## 📋 IEC 62304 Documentation
+
+**LabFlow FHIR API is documented according to IEC 62304** (Medical Device Software Lifecycle Standard) to demonstrate awareness of regulatory compliance for medical device software development.
+
+### Software Safety Classification
+
+**Class B (Medium Risk)**: Software manages Protected Health Information (PHI) but does not directly control medical devices or life-support systems.
+
+### Documentation Structure
+
+```
+IEC62304/
+├── 1_SoftwareRequirements/
+│   └── SoftwareRequirementsSpecification.md    # 53 requirements (FHIR, Security, Data Integrity)
+├── 2_SoftwareArchitecture/
+│   └── SoftwareArchitectureDesign.md           # 26 architecture components + C4 diagrams
+├── 3_RiskManagement/
+│   └── RiskManagementFile.md                   # 12 risks analyzed (FMEA approach)
+├── 4_Testing/
+│   └── TestingReport.md                        # 132 tests, 100% requirements verified
+└── 5_Traceability/
+    └── RequirementsTraceabilityMatrix.md       # Complete Requirements → Tests traceability
+```
+
+### Key Documentation
+
+| Document | Description | Highlights |
+|----------|-------------|------------|
+| **Requirements (SRS)** | 53 software requirements across 11 categories | 100% traced to architecture, tests, and risk controls |
+| **Architecture Design** | 26 architecture components with justification | C4 diagrams, design patterns, ADRs (Architecture Decision Records) |
+| **Risk Management** | 12 identified risks with controls | Defense-in-depth security, all residual risks acceptable |
+| **Testing Report** | 132 unit tests, 100% pass rate | 89% automated verification, 11% manual configuration review |
+| **Traceability Matrix** | Complete forward/backward traceability | Requirements → Architecture → Implementation → Tests → Risks |
+
+### IEC 62304 Compliance Status
+
+✅ **Section 5.1**: Software unit verification completed (132 tests)
+✅ **Section 5.2**: Unit testing conducted (xUnit + FluentAssertions)
+⚠️ **Section 5.3**: Integration testing (planned for Phase 6)
+✅ **Section 5.4**: System testing documented
+✅ **Section 5.7**: Software release ready (development/demonstration)
+✅ **Section 7**: Risk management process complete (ISO 14971 aligned)
+✅ **Section 8**: Configuration management (Git + semantic versioning)
+✅ **Section 9**: Problem resolution (GitHub Issues + tracking)
+
+### Highlights
+
+**Security Architecture** (Defense-in-Depth):
+- Layer 1: HTTPS + TLS 1.2+ (network security)
+- Layer 2: JWT authentication (HS256, 60min expiration)
+- Layer 3: Role-based authorization (Doctor, LabTechnician, Admin)
+- Layer 4: FHIR validation (Firely SDK)
+- Layer 5: Data protection (BCrypt, soft delete, version tracking)
+- Layer 6: Audit logging (Serilog structured logs)
+
+**Data Integrity Controls**:
+- Soft delete (audit trail, regulatory compliance)
+- Version tracking (optimistic concurrency)
+- Reference validation (prevents orphaned data)
+- FHIR validation (ensures interoperability)
+
+**Risk Analysis** (Simplified FMEA):
+- 12 risks identified and analyzed
+- All risks have control measures implemented
+- 0 critical or high residual risks
+- All residual risks accepted for Class B software
+
+**Traceability**:
+- 53 requirements → 26 architecture components
+- 26 architecture components → Implementation files
+- 53 requirements → 132 verification tests
+- 12 risks → 18 control requirements
+
+### Portfolio Value
+
+This IEC 62304 documentation demonstrates:
+- ✅ Understanding of medical device regulations
+- ✅ Software lifecycle process knowledge
+- ✅ Risk-based thinking in healthcare software
+- ✅ Professional documentation practices
+- ✅ Traceability and verification rigor
+- ✅ Readiness for FDA/CE submission processes
+
+### Intended Use
+
+**Development/Portfolio**: Current documentation is appropriate for demonstration and portfolio purposes.
+
+**Production Deployment**: Would require:
+- Integration testing (TestContainers + PostgreSQL)
+- Performance testing and validation
+- Security audit and penetration testing
+- High availability infrastructure
+- Backup/recovery procedures
+- Incident response plan
+- User training materials
+- Post-market surveillance plan
+
+---
+
 ## 📖 Resources
 
 - [FHIR R4 Specification](http://hl7.org/fhir/R4/)
 - [Firely SDK Documentation](https://docs.fire.ly/projects/Firely-NET-SDK/)
+- [IEC 62304 Standard](https://www.iso.org/standard/38421.html) - Medical Device Software Lifecycle
+- [ISO 14971](https://www.iso.org/standard/72704.html) - Risk Management for Medical Devices
 - [Testing Strategy](./TESTING_STRATEGY.md) - Pragmatic testing approach and roadmap
 - [Project Planning](./labflow-fhir-readme.md)
 - [Learning Path](./fhir_learning_path.md)
