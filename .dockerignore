@@ -1,0 +1,40 @@
+# Archivos de build
+**/bin/
+**/obj/
+**/out/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Documentation
+*.md
+!README.md
+
+# Tests (no los necesitamos en la imagen final)
+**/TestResults/
+**/*.Tests/
+
+# IDE
+.vscode/
+.idea/

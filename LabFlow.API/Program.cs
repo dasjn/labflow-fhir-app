@@ -1,8 +1,10 @@
 using System.Text;
 using Hl7.Fhir.Serialization;
+using LabFlow.API;
 using LabFlow.API.Configuration;
 using LabFlow.API.Data;
 using LabFlow.API.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -24,14 +26,13 @@ try
     builder.Host.UseSerilog();
 
     // Add Controllers for FHIR endpoints
-    builder.Services.AddControllers()
-        .AddNewtonsoftJson(options =>
-        {
-            // Configure Newtonsoft.Json to work with FHIR resources
-            // Firely SDK requires specific JSON settings
-            options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Ignore;
-            options.SerializerSettings.DateFormatString = "yyyy-MM-dd";
-        });
+    // Note: We register a custom FhirJsonOutputFormatter to handle FHIR resources correctly
+    builder.Services.AddControllers(options =>
+    {
+        // CRITICAL: Add FhirJsonOutputFormatter FIRST so it takes precedence for FHIR resources
+        var fhirSerializer = new FhirJsonSerializer();
+        options.OutputFormatters.Insert(0, new FhirJsonOutputFormatter(fhirSerializer));
+    });
 
     // Configure Database with Entity Framework Core
     // Using SQLite for development (easy setup, no server needed)
@@ -50,56 +51,84 @@ try
     };
     builder.Services.AddSingleton(new FhirJsonParser(parserSettings));
 
-    // Configure JWT Settings from appsettings.json
-    var jwtSettings = new JwtSettings();
-    builder.Configuration.GetSection("JwtSettings").Bind(jwtSettings);
-    jwtSettings.Validate(); // Validate on startup
-    builder.Services.AddSingleton(jwtSettings);
+    // ⚠️ TESTING MODE: Disable authentication if DISABLE_AUTH_FOR_TESTING is set
+    // CRITICAL: This should NEVER be used in production!
+    var disableAuthForTesting = builder.Configuration.GetValue<bool>("DISABLE_AUTH_FOR_TESTING", false);
 
-    // Register Authentication Service
-    builder.Services.AddScoped<IAuthService, AuthService>();
-
-    // Configure JWT Authentication
-    builder.Services.AddAuthentication(options =>
+    if (disableAuthForTesting)
     {
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(options =>
+        Log.Warning("⚠️ AUTHENTICATION DISABLED FOR TESTING - DO NOT USE IN PRODUCTION!");
+
+        // Add fake authentication scheme that always succeeds
+        builder.Services.AddAuthentication("TestScheme")
+            .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, TestAuthHandler>("TestScheme", options => { });
+
+        builder.Services.AddAuthorization(options =>
+        {
+            // Override ALL authorization requirements to allow anonymous access
+            options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder("TestScheme")
+                .RequireAssertion(_ => true) // Always succeed
+                .Build();
+
+            options.FallbackPolicy = options.DefaultPolicy;
+        });
+    }
+    else
     {
-        options.SaveToken = true;
-        options.RequireHttpsMetadata = true; // ✅ HTTPS enforcement
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ClockSkew = TimeSpan.FromSeconds(5), // 5 seconds tolerance for clock skew (industry standard)
-            ValidIssuer = jwtSettings.Issuer,
-            ValidAudience = jwtSettings.Audience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
-        };
+        // PRODUCTION MODE: Full JWT authentication
+        Log.Information("JWT Authentication enabled (production mode)");
 
-        // Audit logging for authentication events
-        options.Events = new JwtBearerEvents
-        {
-            OnAuthenticationFailed = context =>
-            {
-                Log.Warning("JWT authentication failed: {Error}", context.Exception.Message);
-                return System.Threading.Tasks.Task.CompletedTask;
-            },
-            OnTokenValidated = context =>
-            {
-                var userId = context.Principal?.FindFirst("sub")?.Value;
-                Log.Information("JWT token validated successfully for UserId: {UserId}", userId);
-                return System.Threading.Tasks.Task.CompletedTask;
-            }
-        };
-    });
+        // Configure JWT Settings from appsettings.json
+        var jwtSettings = new JwtSettings();
+        builder.Configuration.GetSection("JwtSettings").Bind(jwtSettings);
+        jwtSettings.Validate(); // Validate on startup
+        builder.Services.AddSingleton(jwtSettings);
 
-    builder.Services.AddAuthorization();
+        // Register Authentication Service
+        builder.Services.AddScoped<IAuthService, AuthService>();
+
+        // Configure JWT Authentication
+        builder.Services.AddAuthentication(options =>
+        {
+            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+        })
+        .AddJwtBearer(options =>
+        {
+            options.SaveToken = true;
+            options.RequireHttpsMetadata = true; // ✅ HTTPS enforcement
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ClockSkew = TimeSpan.FromSeconds(5), // 5 seconds tolerance for clock skew (industry standard)
+                ValidIssuer = jwtSettings.Issuer,
+                ValidAudience = jwtSettings.Audience,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SecretKey))
+            };
+
+            // Audit logging for authentication events
+            options.Events = new JwtBearerEvents
+            {
+                OnAuthenticationFailed = context =>
+                {
+                    Log.Warning("JWT authentication failed: {Error}", context.Exception.Message);
+                    return System.Threading.Tasks.Task.CompletedTask;
+                },
+                OnTokenValidated = context =>
+                {
+                    var userId = context.Principal?.FindFirst("sub")?.Value;
+                    Log.Information("JWT token validated successfully for UserId: {UserId}", userId);
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }
+            };
+        });
+
+        builder.Services.AddAuthorization();
+    }
 
     // Add Swagger/OpenAPI
     builder.Services.AddEndpointsApiExplorer();
@@ -160,6 +189,15 @@ try
     });
 
     var app = builder.Build();
+
+    // Apply database migrations automatically on startup
+    using (var scope = app.Services.CreateScope())
+    {
+        var dbContext = scope.ServiceProvider.GetRequiredService<FhirDbContext>();
+        Log.Information("Applying database migrations...");
+        dbContext.Database.Migrate();
+        Log.Information("Database migrations applied successfully");
+    }
 
     // Configure HTTP request pipeline
     if (app.Environment.IsDevelopment())
